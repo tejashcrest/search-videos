@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .glass-effect {
+    @apply bg-white/80 backdrop-blur-lg border border-gray-200/50;
+  }
+  
+  .search-input {
+    @apply w-full px-6 py-4 text-lg rounded-2xl border-2 border-gray-200 
+           focus:border-primary-500 focus:ring-4 focus:ring-primary-100 
+           outline-none transition-all duration-200 placeholder:text-gray-400;
+  }
+  
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-500 
+           text-white rounded-xl font-medium shadow-lg shadow-primary-500/30
+           hover:shadow-xl hover:shadow-primary-500/40 hover:scale-105
+           active:scale-95 transition-all duration-200;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-white border-2 border-gray-200 rounded-lg
+           hover:border-primary-500 hover:bg-primary-50 
+           transition-all duration-200 font-medium;
+  }
+  
+  .clip-card {
+    @apply bg-white rounded-2xl shadow-md hover:shadow-xl 
+           transition-all duration-300 overflow-hidden
+           border border-gray-100 hover:border-primary-200
+           hover:-translate-y-1 cursor-pointer;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
