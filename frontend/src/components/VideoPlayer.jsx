@@ -19,11 +19,11 @@ const VideoPlayer = ({ clip, onClose }) => {
     let autoPaused = false;
 
     const handleTimeUpdate = () => {
-      if (!autoPaused && videoElement.currentTime >= clip.timestamp_end) {
-        autoPaused = true;
-        videoElement.pause();
-        videoElement.removeEventListener('timeupdate', handleTimeUpdate);
-      }
+      // if (!autoPaused && videoElement.currentTime >= clip.timestamp_end) {
+      //   autoPaused = true;
+      //   videoElement.pause();
+      //   videoElement.removeEventListener('timeupdate', handleTimeUpdate);
+      // }
     };
 
     const handlePlay = () => {

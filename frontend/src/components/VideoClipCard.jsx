@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { Play, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import { formatTimestamp } from '../utils/formatTime';
 import { use_thumbnail } from '../hooks/useThumbnail';
@@ -32,10 +32,47 @@ const VideoClipCard = ({ clip, onClick }) => {
     timestamp_start
   );
 
+  const videoRef = useRef(null);
+  const [isHovering, setIsHovering] = useState(false);
+
+  const handleMouseEnter = useCallback(() => {
+    if (!videoUrl) return;
+    setIsHovering(true);
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      videoEl.currentTime = timestamp_start || 0;
+      const playPromise = videoEl.play();
+      if (playPromise?.catch) {
+        playPromise.catch(() => {});
+      }
+    }
+  }, [timestamp_start, videoUrl]);
+
+  const handleMouseLeave = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.currentTime = timestamp_start || 0;
+    }
+    setIsHovering(false);
+  }, [timestamp_start]);
+
+  const handleTimeUpdate = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl && timestamp_end !== undefined) {
+      if (videoEl.currentTime >= timestamp_end) {
+        videoEl.pause();
+        videoEl.currentTime = timestamp_start || 0;
+      }
+    }
+  }, [timestamp_end, timestamp_start]);
+
   return (
     <div 
       className="bg-white rounded-2xl shadow-md hover:shadow-xl hover:border-blue-200 border border-transparent transition-all duration-300 overflow-hidden cursor-pointer group"
       onClick={() => onClick(clip)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Video Thumbnail */}
       <div className="relative h-64 bg-gray-200 flex items-center justify-center overflow-hidden">
@@ -63,8 +100,21 @@ const VideoClipCard = ({ clip, onClick }) => {
           <img 
             src={thumbnail} 
             alt={`Thumbnail at ${formatTimestamp(timestamp_start)}`}
-            className="absolute inset-0 w-full h-full object-cover"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${isHovering ? 'opacity-0' : 'opacity-100'}`}
             loading="lazy"
+          />
+        )}
+
+        {/* Hover video preview */}
+        {videoUrl && (
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            muted
+            playsInline
+            preload="none"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${isHovering ? 'opacity-100' : 'opacity-0'}`}
+            onTimeUpdate={handleTimeUpdate}
           />
         )}
 
