@@ -9,21 +9,27 @@ from pydantic import BaseModel
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 app = FastAPI(title="Video Search Service", version="1.0.0")
 
-INDEX_NAME = "video_clips_test"
+
+# CHANGE 1: Updated index name to consolidated index
+INDEX_NAME = "video_clips_consolidated"
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://condenast-fe.s3-website-us-east-1.amazonaws.com"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3000", "http://condenast-fe.s3-website-us-east-1.amazonaws.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class SearchRequest(BaseModel):
     query_text: str
@@ -94,6 +100,10 @@ async def search_videos(request: SearchRequest):
             results = hybrid_search(opensearch_client, query_embedding, query_text, top_k)
         elif search_type == 'vector':
             results = vector_search(opensearch_client, query_embedding, top_k)
+        elif search_type == 'visual':
+            results = visual_search(opensearch_client, query_embedding, top_k)
+        elif search_type == 'audio':
+            results = audio_search(opensearch_client, query_embedding, top_k)
         elif search_type == 'text':
             results = text_search(opensearch_client, query_text, top_k)
         else:
@@ -190,7 +200,7 @@ def generate_text_embedding(bedrock_runtime, text: str) -> List[float]:
         }
         
         response = bedrock_runtime.invoke_model(
-            modelId="us.twelvelabs.marengo-embed-2-7-v1:0",
+            modelId="us.twelvelabs.marengo-embed-2-7-v1:0", 
             body=json.dumps(request_body),
             contentType="application/json",
             accept="application/json"
@@ -300,52 +310,63 @@ def get_all_unique_videos(client) -> List[Dict]:
         return []
 
 
+# CHANGE 3: Updated hybrid_search to query emb_vis_text and emb_audio
 def hybrid_search(client, query_embedding: List[float], query_text: str, top_k: int = 10) -> List[Dict]:
-    """Hybrid search combining vector similarity and text matching"""
+    """Hybrid search combining vector similarity on visual-text & audio + text matching"""
     search_body = {
         "size": top_k,
         "query": {
-            "hybrid": {
-                "queries": [
+            "bool": {
+                "should": [
+                    # Visual-text embedding (k-NN)
                     {
                         "knn": {
-                            "embedding": {
+                            "emb_vis_text": {
                                 "vector": query_embedding,
-                                "k": top_k
+                                "k": top_k,
+                                "boost": 1.5  # Higher weight for visual text
                             }
                         }
                     },
+                    # Audio embedding (k-NN)
+                    {
+                        "knn": {
+                            "emb_audio": {
+                                "vector": query_embedding,
+                                "k": top_k,
+                                "boost": 1.0
+                            }
+                        }
+                    },
+                    # Text matching (BM25)
                     {
                         "match": {
-                            "clip_text": {
+                            "video_name": {
                                 "query": query_text,
-                                "fuzziness": "AUTO"
+                                "fuzziness": "AUTO",
+                                "boost": 1.2
                             }
                         }
                     }
-                ]
+                ],
+                "minimum_should_match": 1
             }
         },
-        "collapse": {
-            "field": "clip_id"
-        },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "embedding_scope"]
+                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
     }
-    
     pipeline_exists = _create_hybrid_search_pipeline(client)
-    
     if pipeline_exists:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body,
-            "search_pipeline": "hybrid-norm-pipeline"
-        }
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": "hybrid-norm-pipeline"
+            }
     else:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body
-        }
+                "index": INDEX_NAME,
+                "body": search_body
+            }
     
     try:
         response = client.search(**search_params)
@@ -356,26 +377,37 @@ def hybrid_search(client, query_embedding: List[float], query_text: str, top_k: 
         return vector_search(client, query_embedding, top_k)
 
 
+# CHANGE 4: Updated vector_search to query emb_vis_text and emb_audio
 def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List[Dict]:
-    """Vector-only k-NN search"""
+    """Vector-only k-NN search on visual-text and audio embeddings with normalization"""
     search_body = {
         "size": top_k,
         "query": {
-            "knn": {
-                "embedding": {
-                    "vector": query_embedding,
-                    "k": top_k
-                }
+            "hybrid": {
+                "queries": [
+                    # ordering here should match weights defined in the pipeline (0.7, 0.3)
+                    {"knn": {"emb_vis_text": {"vector": query_embedding, "k": top_k}}},
+                    {"knn": {"emb_audio": {"vector": query_embedding, "k": top_k}}}
+                ]
             }
         },
-        "collapse": {
-            "field": "clip_id"
-        },
-        "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "embedding_scope"]
+        "_source": ["video_id", "video_path", "clip_id", "timestamp_start",
+                    "timestamp_end", "clip_text", "video_name", "clip_duration"]
     }
-    
-    response = client.search(index=INDEX_NAME, body=search_body)
+    pipeline_exists = _create_vector_search_pipeline(client)
+    if pipeline_exists:
+        search_params = {
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": "vector-norm-pipeline-consolidated-index"
+            }
+    else:
+        search_params = {
+                "index": INDEX_NAME,
+                "body": search_body
+            }
+
+    response = client.search(**search_params)
     return parse_search_results(response)
 
 
@@ -385,17 +417,54 @@ def text_search(client, query_text: str, top_k: int = 10) -> List[Dict]:
         "size": top_k,
         "query": {
             "match": {
-                "clip_text": {
+                "video_name": {
                     "query": query_text,
                     "fuzziness": "AUTO"
                 }
             }
         },
-        "collapse": {
-            "field": "clip_id"
+        "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
+                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+    }
+    
+    response = client.search(index=INDEX_NAME, body=search_body)
+    return parse_search_results(response)
+
+
+def visual_search(client, query_embedding: List[float], top_k: int = 10) -> List[Dict]:
+    """Visual-only k-NN search on visual-text embeddings"""
+    search_body = {
+        "size": top_k,
+        "query": {
+            "knn": {
+                "emb_vis_text": {
+                    "vector": query_embedding,
+                    "k": top_k
+                }
+            }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "embedding_scope"]
+                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+    }
+    
+    response = client.search(index=INDEX_NAME, body=search_body)
+    return parse_search_results(response)
+
+
+def audio_search(client, query_embedding: List[float], top_k: int = 10) -> List[Dict]:
+    """Audio-only k-NN search on audio embeddings"""
+    search_body = {
+        "size": top_k,
+        "query": {
+            "knn": {
+                "emb_audio": {
+                    "vector": query_embedding,
+                    "k": top_k
+                }
+            }
+        },
+        "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
+                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
     }
     
     response = client.search(index=INDEX_NAME, body=search_body)
@@ -442,6 +511,46 @@ def _create_hybrid_search_pipeline(client):
     return True
 
 
+def _create_vector_search_pipeline(client):
+    """Create search pipeline with score normalization for vector search"""
+    
+    pipeline_body = {
+        "description": "Post-processing pipeline for vector search with min-max normalization (0-1 range)",
+        "phase_results_processors": [
+            {
+                "normalization-processor": {
+                    "normalization": {
+                        "technique": "min_max"
+                    },
+                    "combination": {
+                        "technique": "arithmetic_mean",
+                        "parameters": {
+                            "weights": [0.7, 0.3]
+                        }
+                    }
+                }
+            }
+        ]
+    }
+    
+    try:
+        try:
+            client.search_pipeline.get(id="vector-norm-pipeline-consolidated-index")
+            logger.info("✓ Vector search pipeline already exists")
+        except:
+            client.search_pipeline.put(
+                id="vector-norm-pipeline-consolidated-index",
+                body=pipeline_body
+            )
+            logger.info("✓ Created vector search pipeline with min-max normalization")
+    
+    except Exception as e:
+        logger.warning(f"✗ Vector pipeline creation error: {e}")
+        return False
+    
+    return True
+
+
 def parse_search_results(response: Dict) -> List[Dict]:
     """Parse OpenSearch response into results list"""
     results = []
@@ -450,6 +559,7 @@ def parse_search_results(response: Dict) -> List[Dict]:
         result = hit['_source']
         result['score'] = hit['_score']
         result['_id'] = hit['_id']
+        # logger.info(result)
         results.append(result)
     
     return results
