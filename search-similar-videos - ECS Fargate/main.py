@@ -219,10 +219,10 @@ def generate_text_embedding(bedrock_runtime, text: str) -> List[float]:
 
 
 def convert_s3_to_presigned_urls(s3_client, results: List[Dict], expiration: int = 3600) -> List[Dict]:
-    """Convert S3 paths to presigned URLs in video_path field"""
+    """Convert S3 paths to presigned URLs in video_path and thumbnail_path fields"""
     for result in results:
+        # Convert video_path to presigned URL
         video_path = result.get('video_path', '')
-        
         if video_path.startswith('s3://'):
             try:
                 s3_parts = video_path.replace('s3://', '').split('/', 1)
@@ -239,6 +239,27 @@ def convert_s3_to_presigned_urls(s3_client, results: List[Dict], expiration: int
                 
             except Exception as e:
                 logger.warning(f"Error generating presigned URL for {video_path}: {e}")
+                pass
+        
+        # Convert thumbnail_path to presigned URL
+        thumbnail_path = result.get('thumbnail_path', '')
+        if thumbnail_path and thumbnail_path.startswith('s3://'):
+            try:
+                s3_parts = thumbnail_path.replace('s3://', '').split('/', 1)
+                bucket = s3_parts[0]
+                key = s3_parts[1] if len(s3_parts) > 1 else ''
+                
+                presigned_url = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': bucket, 'Key': key},
+                    ExpiresIn=expiration
+                )
+                
+                result['thumbnail_path'] = presigned_url
+                logger.info(f"✓ Generated presigned URL for thumbnail: {key}")
+                
+            except Exception as e:
+                logger.warning(f"Error generating presigned URL for thumbnail {thumbnail_path}: {e}")
                 pass
     
     return results
@@ -316,44 +337,40 @@ def hybrid_search(client, query_embedding: List[float], query_text: str, top_k: 
     search_body = {
         "size": top_k,
         "query": {
-            "bool": {
-                "should": [
-                    # Visual-text embedding (k-NN)
+            "hybrid": {
+                "queries": [
+                    # Visual-text embedding (k-NN) - weight 0.5
                     {
                         "knn": {
                             "emb_vis_text": {
                                 "vector": query_embedding,
-                                "k": top_k,
-                                "boost": 1.5  # Higher weight for visual text
+                                "k": top_k
                             }
                         }
                     },
-                    # Audio embedding (k-NN)
+                    # Audio embedding (k-NN) - weight 0.3
                     {
                         "knn": {
                             "emb_audio": {
                                 "vector": query_embedding,
-                                "k": top_k,
-                                "boost": 1.0
+                                "k": top_k
                             }
                         }
                     },
-                    # Text matching (BM25)
+                    # Text matching (BM25) - weight 0.2
                     {
                         "match": {
                             "video_name": {
                                 "query": query_text,
-                                "fuzziness": "AUTO",
-                                "boost": 1.2
+                                "fuzziness": "AUTO"
                             }
                         }
                     }
-                ],
-                "minimum_should_match": 1
+                ]
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+                   "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration"]
     }
     pipeline_exists = _create_hybrid_search_pipeline(client)
     if pipeline_exists:
@@ -392,7 +409,7 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start",
-                    "timestamp_end", "clip_text", "video_name", "clip_duration"]
+                    "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration"]
     }
     pipeline_exists = _create_vector_search_pipeline(client)
     if pipeline_exists:
@@ -424,7 +441,7 @@ def text_search(client, query_text: str, top_k: int = 10) -> List[Dict]:
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+                   "timestamp_end", "clip_text",  "thumbnail_path", "video_name", "clip_duration"]
     }
     
     response = client.search(index=INDEX_NAME, body=search_body)
@@ -444,7 +461,7 @@ def visual_search(client, query_embedding: List[float], top_k: int = 10) -> List
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+                   "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration"]
     }
     
     response = client.search(index=INDEX_NAME, body=search_body)
@@ -464,7 +481,7 @@ def audio_search(client, query_embedding: List[float], top_k: int = 10) -> List[
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
-                   "timestamp_end", "clip_text", "video_name", "clip_duration"]
+                   "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration"]
     }
     
     response = client.search(index=INDEX_NAME, body=search_body)
@@ -485,7 +502,7 @@ def _create_hybrid_search_pipeline(client):
                     "combination": {
                         "technique": "arithmetic_mean",
                         "parameters": {
-                            "weights": [0.7, 0.3]
+                            "weights": [0.5, 0.3, 0.2]
                         }
                     }
                 }
@@ -495,11 +512,11 @@ def _create_hybrid_search_pipeline(client):
     
     try:
         try:
-            client.search_pipeline.get(id="hybrid-norm-pipeline")
+            client.search_pipeline.get(id="hybrid-norm-pipeline-consolidated-index")
             logger.info("Hybrid search pipeline already exists")
         except:
             client.search_pipeline.put(
-                id="hybrid-norm-pipeline",
+                id="hybrid-norm-pipeline-consolidated-index",
                 body=pipeline_body
             )
             logger.info("✓ Created hybrid search pipeline with min-max normalization")

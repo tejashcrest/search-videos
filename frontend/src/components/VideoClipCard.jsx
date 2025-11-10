@@ -4,7 +4,7 @@ import { formatTimestamp } from '../utils/formatTime';
 import { use_thumbnail } from '../hooks/useThumbnail';
 
 const VideoClipCard = ({ clip, onClick }) => {
-  const { video_id, video_path, timestamp_start, timestamp_end, clip_text, score, presigned_url } = clip;
+  const { video_id, video_path, timestamp_start, timestamp_end, clip_text, score, presigned_url, thumbnail_path } = clip;
 
   // Normalize score to 0-100 range
   const rawScore = typeof score === 'number' ? score : 0;
@@ -24,12 +24,13 @@ const VideoClipCard = ({ clip, onClick }) => {
     indicatorBg = 'bg-green-500';
   }
 
-  // Load thumbnail from video - use presigned_url if available, fallback to video_path
+  // Use thumbnail_path if available (presigned URL from backend), otherwise generate from video
   const videoUrl = presigned_url || video_path;
   const { thumbnail, isLoading: thumbnailLoading, error: thumbnailError } = use_thumbnail(
     videoUrl, 
     video_id, 
-    timestamp_start
+    timestamp_start,
+    thumbnail_path  // Pass thumbnail_path as fallback
   );
 
   const videoRef = useRef(null);
