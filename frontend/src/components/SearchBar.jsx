@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, X, Loader2, ChevronDown } from 'lucide-react';
 
-const SearchBar = ({ onSearch, isLoading, onSearchTypeChange }) => {
-  const [query, setQuery] = useState('');
+const SearchBar = ({ onSearch, isLoading, onSearchTypeChange, queryValue = '', onQueryChange }) => {
+  const [query, setQuery] = useState(queryValue);
+
+  useEffect(() => {
+    setQuery(queryValue || '');
+  }, [queryValue]);
+
+  const updateQuery = (value) => {
+    setQuery(value);
+    onQueryChange?.(value);
+  };
+
   const [showDropdown, setShowDropdown] = useState(false);
   const [visual, setVisual] = useState(true);
   const [audio, setAudio] = useState(true);
@@ -26,7 +36,7 @@ const SearchBar = ({ onSearch, isLoading, onSearchTypeChange }) => {
   };
 
   const clear_query = () => {
-    setQuery('');
+    updateQuery('');
   };
 
   const handleVisualChange = (e) => {
@@ -54,7 +64,7 @@ const SearchBar = ({ onSearch, isLoading, onSearchTypeChange }) => {
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => updateQuery(e.target.value)}
             placeholder="Search videos, actions, or objects..."
             className="w-full py-4 pl-14 pr-16 text-lg rounded-2xl border border-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-400 shadow-sm hover:shadow-md transition-all"
             disabled={isLoading}

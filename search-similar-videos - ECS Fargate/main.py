@@ -29,7 +29,7 @@ app.add_middleware(
 INDEX_NAME = "video_clips_consolidated"
 VECTOR_PIPELINE = "vector-norm-pipeline-consolidated-index-rrf"
 MIN_SCORE = 0.5
-INNER_MIN_SCORE = 0.6
+INNER_MIN_SCORE_VISUAL = INNER_MIN_SCORE_AUDIO = INNER_MIN_SCORE = 0.6
 INNER_TOP_K = 100
 TOP_K = 50
 
@@ -48,7 +48,7 @@ async def startup_event():
     
     try:
         logger.info("Initializing clients...")
-        logger.info("1")
+        # logger.info("1")
         opensearch_client = get_opensearch_client()
         bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
         s3_client = boto3.client('s3', region_name='us-east-1')
@@ -431,7 +431,7 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List
                             "emb_vis_text": 
                             {
                                 "vector": query_embedding, 
-                                "min_score": INNER_MIN_SCORE
+                                "min_score": INNER_MIN_SCORE_VISUAL
                             }
                         }
                     },
@@ -440,7 +440,7 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List
                             "emb_audio": 
                             {
                                 "vector": query_embedding, 
-                                "min_score": INNER_MIN_SCORE
+                                "min_score": INNER_MIN_SCORE_AUDIO
                             }
                         }
                     }
@@ -495,7 +495,7 @@ def visual_search(client, query_embedding: List[float], top_k: int = 10) -> List
             "knn": {
                 "emb_vis_text": {
                     "vector": query_embedding,
-                    "min_score": INNER_MIN_SCORE
+                    "min_score": INNER_MIN_SCORE_VISUAL
                 }
             }
         },
@@ -515,7 +515,7 @@ def audio_search(client, query_embedding: List[float], top_k: int = 10) -> List[
             "knn": {
                 "emb_audio": {
                     "vector": query_embedding,
-                    "min_score": INNER_MIN_SCORE
+                    "min_score": INNER_MIN_SCORE_AUDIO
                 }
             }
         },
@@ -760,7 +760,7 @@ import math
 #     # print(final_results)
 #     return final_results
 
-def normalize_rrf(rrf_raw, M=1.2, k=60):
+def normalize_rrf(rrf_raw, M=1.23, k=60):
     rrf_max = M * (1.0 / (k + 1.0))   # = ~0.03278688 when M=2
     return min(1.0, rrf_raw / rrf_max)
 
@@ -773,7 +773,7 @@ def parse_search_results_vector(response):
         result = hit["_source"]
         result["_id"] = hit["_id"]
         result["score_raw"] = raw
-        result["score"] = normalize_rrf(raw)
+        result["score"] = round(normalize_rrf(raw), 3)
         
         results.append(result)
     

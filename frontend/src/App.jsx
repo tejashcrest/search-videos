@@ -9,6 +9,8 @@ import { searchClips } from './services/api';
 import { AlertCircle, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+import { setActiveQuery } from './components/SearchBar';
+
 function App() {
   const [currentPage, setCurrentPage] = useState('explore'); // 'search' or 'upload'
   const [clips, setClips] = useState([]);
@@ -107,19 +109,30 @@ function App() {
                   className="flex flex-wrap gap-2 justify-center max-w-2xl"
                 >
                   <button
-                    onClick={() => handle_search('person walking in park')}
+                    onClick={() => {
+                      handle_search('person walking in park');
+                      setActiveQuery('person walking in park');
+                    }}
                     className="px-4 py-2 bg-white border border-blue-200 rounded-full hover:border-blue-600 hover:bg-blue-50 transition-all text-sm text-gray-700"
                   >
                     person walking in park
                   </button>
                   <button
-                    onClick={() => handle_search('sunset scene')}
+                    onClick={() => {
+                      handle_search('sunset scene')
+                      setActiveQuery('sunset scene')
+                    }
+                  }
                     className="px-4 py-2 bg-white border border-blue-200 rounded-full hover:border-blue-600 hover:bg-blue-50 transition-all text-sm text-gray-700"
                   >
                     sunset scene
                   </button>
                   <button
-                    onClick={() => handle_search('people talking')}
+                    onClick={() => {
+                      handle_search('people talking')
+                      setActiveQuery('people talking')
+                    }
+                    }
                     className="px-4 py-2 bg-white border border-blue-200 rounded-full hover:border-blue-600 hover:bg-blue-50 transition-all text-sm text-gray-700"
                   >
                     people talking

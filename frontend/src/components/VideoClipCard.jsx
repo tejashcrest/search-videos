@@ -8,7 +8,7 @@ const VideoClipCard = ({ clip, onClick }) => {
 
   // Normalize score to 0-100 range
   const rawScore = typeof score === 'number' ? score : 0;
-  const normalizedScore = rawScore > 1 ? rawScore : rawScore * 100;
+  const normalizedScore = rawScore > 1 ? rawScore : Math.abs(rawScore) * 100;
   const clampedScore = Math.max(0, Math.min(normalizedScore, 100));
 
   const evaluationScore = Math.min(clampedScore, 80);
@@ -16,7 +16,7 @@ const VideoClipCard = ({ clip, onClick }) => {
   let confidenceLabel = 'LOW';
   let indicatorBg = 'bg-red-500';
 
-  if (evaluationScore >= 60 && evaluationScore < 80) {
+  if (evaluationScore >= 70 && evaluationScore < 80) {
     confidenceLabel = 'MEDIUM';
     indicatorBg = 'bg-yellow-500';
   } else if (evaluationScore >= 80) {
