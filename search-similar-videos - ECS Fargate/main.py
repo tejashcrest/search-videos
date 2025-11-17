@@ -28,8 +28,10 @@ app.add_middleware(
 # CHANGE 1: Updated index name to consolidated index
 INDEX_NAME = "video_clips_consolidated"
 VECTOR_PIPELINE = "vector-norm-pipeline-consolidated-index-rrf"
-MIN_SCORE = 0.55
-INNER_TOP_K = 50
+MIN_SCORE = 0.5
+INNER_MIN_SCORE = 0.6
+INNER_TOP_K = 100
+TOP_K = 50
 
 # Initialize clients at startup
 opensearch_client = None
@@ -46,6 +48,7 @@ async def startup_event():
     
     try:
         logger.info("Initializing clients...")
+        logger.info("1")
         opensearch_client = get_opensearch_client()
         bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
         s3_client = boto3.client('s3', region_name='us-east-1')
@@ -419,17 +422,16 @@ def hybrid_search(client, query_embedding: List[float], query_text: str, top_k: 
 def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List[Dict]:
     """Vector-only k-NN search on visual-text and audio embeddings with normalization"""
     search_body = {
-        "size": top_k,
+        "size": TOP_K,
         "query": {
             "hybrid": {
                 "queries": [
-                    # ordering here should match weights defined in the pipeline (0.7, 0.3)
                     {
                         "knn": {
                             "emb_vis_text": 
                             {
                                 "vector": query_embedding, 
-                                "k": INNER_TOP_K
+                                "min_score": INNER_MIN_SCORE
                             }
                         }
                     },
@@ -438,7 +440,7 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List
                             "emb_audio": 
                             {
                                 "vector": query_embedding, 
-                                "k": INNER_TOP_K
+                                "min_score": INNER_MIN_SCORE
                             }
                         }
                     }
@@ -462,7 +464,7 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10) -> List
             }
 
     response = client.search(**search_params)
-    return parse_search_results(response)
+    return parse_search_results_vector(response)
 
 
 def text_search(client, query_text: str, top_k: int = 10) -> List[Dict]:
@@ -493,7 +495,7 @@ def visual_search(client, query_embedding: List[float], top_k: int = 10) -> List
             "knn": {
                 "emb_vis_text": {
                     "vector": query_embedding,
-                    "min_score": 0.5
+                    "min_score": INNER_MIN_SCORE
                 }
             }
         },
@@ -513,7 +515,7 @@ def audio_search(client, query_embedding: List[float], top_k: int = 10) -> List[
             "knn": {
                 "emb_audio": {
                     "vector": query_embedding,
-                    "min_score": 0.5
+                    "min_score": INNER_MIN_SCORE
                 }
             }
         },
@@ -595,18 +597,32 @@ def _create_vector_search_pipeline(client):
     #         }
     #     ]
     # }
+    # pipeline_body = {
+    #     "description": "Post-processing pipeline for vector search with min-max normalization (0-1 range)",
+    #     "phase_results_processors": [
+    #         {
+    #             "normalization-processor": {
+    #                 "normalization": {
+    #                     "technique": "l2"
+    #                 }
+    #             }
+    #         }
+    #     ]
+    # }
     pipeline_body = {
-        "description": "Post-processing pipeline for vector search with min-max normalization (0-1 range)",
-        "phase_results_processors": [
-            {
-                "normalization-processor": {
-                    "normalization": {
-                        "technique": "z_score"
+            "description": "Normalization → RRF → final min-max normalization",
+            "phase_results_processors": [
+                {
+                "score-ranker-processor": {
+                    "combination": {
+                    "technique": "rrf",
+                    "rank_constant": 60
                     }
                 }
-            }
-        ]
-    }
+                }
+            ]
+        }
+
     
     try:
         client.search_pipeline.put(
@@ -635,6 +651,135 @@ def parse_search_results(response: Dict) -> List[Dict]:
     
     return results
 
+import math
+# def parse_search_results_vector(response: Dict) -> List[Dict]:
+#     """Parse OpenSearch results and apply L2 score normalization (optimized)."""
+#     results = []
+#     sum_sq = 0.0
+
+#     # First loop: collect results & accumulate squared scores
+#     for hit in response['hits']['hits']:
+#         result = hit['_source']
+
+#         score = hit['_score']
+#         sum_sq += score * score
+
+#         result['score'] = score
+#         result['_id'] = hit['_id']
+#         results.append(result)
+
+#     print(results)
+
+#     # Compute L2 norm
+#     norm = math.sqrt(sum_sq) if sum_sq > 0 else 1.0
+#     logger.info(f"L2 norm: {norm}")
+#     # Second loop: apply normalized score
+#     for r in results:
+#         r['score'] = r['score'] / norm
+    
+#     print(results)
+
+#     return results
+
+# def parse_search_results_vector(response: Dict) -> List[Dict]:
+#     """Parse OpenSearch results and apply min-max score normalization."""
+#     results = []
+#     scores = []
+
+#     # First loop: collect results & raw scores
+#     for hit in response['hits']['hits']:
+#         result = hit['_source']
+#         score = hit['_score']
+
+#         result['score'] = score
+#         result['_id'] = hit['_id']
+
+#         results.append(result)
+#         scores.append(score)
+
+#     print(results)
+
+#     # Compute min and max
+#     if scores:
+#         mn = min(scores)
+#         mx = max(scores)
+#     else:
+#         mn, mx = 0.0, 1.0
+
+#     logger.info(f"Min score: {mn}, Max score: {mx}")
+
+#     # Avoid division-by-zero: if all scores equal
+#     denom = mx - mn if mx != mn else 1.0
+
+#     # Second loop: apply min-max normalization
+#     for r in results:
+#         r['score'] = (r['score'] - mn) / denom
+
+#     print(results)
+
+#     return results
+
+# def sigmoid(x: float) -> float:
+#     return 1.0 / (1.0 + math.exp(-x))
+
+# def parse_search_results_vector(response: Dict) -> List[Dict]:
+#     """Parse OpenSearch results and apply sigmoid normalization to scores."""
+#     results = []
+#     scores = []
+
+#     # First loop: collect results & raw scores
+#     for hit in response['hits']['hits']:
+#         result = hit['_source']
+#         score = hit['_score']
+
+#         result['_id'] = hit['_id']
+#         result['score_raw'] = score
+
+#         results.append(result)
+#         scores.append(score)
+
+#     # Compute mean for centering (b)
+#     if scores:
+#         mean_score = sum(scores) / len(scores)
+#     else:
+#         mean_score = 0.0
+
+#     final_results = []
+#     # Steepness factor
+#     a = 5.0   # Feel free to tune this (3–10)
+#     scale = 100.0/2
+#     # print(results)
+#     # Apply sigmoid normalization
+#     for r in results:
+#         centered = (r['score_raw'] - mean_score) * scale
+#         r['score'] = sigmoid(a * centered)
+#         if r['score'] < MIN_SCORE:
+#             break
+#         final_results.append(r)
+
+#     # print(final_results)
+#     return final_results
+
+def normalize_rrf(rrf_raw, M=1.2, k=60):
+    rrf_max = M * (1.0 / (k + 1.0))   # = ~0.03278688 when M=2
+    return min(1.0, rrf_raw / rrf_max)
+
+def parse_search_results_vector(response):
+    results = []
+    
+    for hit in response["hits"]["hits"]:
+        raw = hit["_score"]
+        
+        result = hit["_source"]
+        result["_id"] = hit["_id"]
+        result["score_raw"] = raw
+        result["score"] = normalize_rrf(raw)
+        
+        results.append(result)
+    
+    # print(results)
+
+    return results
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

@@ -16,10 +16,10 @@ const VideoClipCard = ({ clip, onClick }) => {
   let confidenceLabel = 'LOW';
   let indicatorBg = 'bg-red-500';
 
-  if (evaluationScore >= 60 && evaluationScore < 75) {
+  if (evaluationScore >= 60 && evaluationScore < 80) {
     confidenceLabel = 'MEDIUM';
     indicatorBg = 'bg-yellow-500';
-  } else if (evaluationScore >= 75) {
+  } else if (evaluationScore >= 80) {
     confidenceLabel = 'HIGH';
     indicatorBg = 'bg-green-500';
   }

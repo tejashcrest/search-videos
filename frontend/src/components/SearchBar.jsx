@@ -124,7 +124,7 @@ const SearchBar = ({ onSearch, isLoading, onSearchTypeChange }) => {
                   </label>
 
                   {/* Top K Input */}
-                  <div className="flex items-center gap-3 p-2">
+                  {/* <div className="flex items-center gap-3 p-2">
                     <label className="text-sm font-medium text-gray-700 flex-1">
                       Results (n)
                     </label>
@@ -136,7 +136,7 @@ const SearchBar = ({ onSearch, isLoading, onSearchTypeChange }) => {
                       onChange={(e) => setTopK(Math.max(1, parseInt(e.target.value)))}
                       className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Search Type Display */}
