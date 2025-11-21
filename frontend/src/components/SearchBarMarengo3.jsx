@@ -155,17 +155,6 @@ const SearchBarMarengo3 = ({ onSearch, isLoading, onSearchTypeChange, queryValue
                   </button>
                 </div>
                 
-                {/* Text input area when image is selected */}
-                <div className="flex-1 flex items-center">
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => updateQuery(e.target.value)}
-                    placeholder="Add text query (optional)..."
-                    className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none"
-                    disabled={isLoading}
-                  />
-                </div>
               </div>
             )}
             

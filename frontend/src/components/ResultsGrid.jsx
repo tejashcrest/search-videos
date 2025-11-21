@@ -1,7 +1,7 @@
 import VideoClipCard from './VideoClipCard';
 import { FileVideo } from 'lucide-react';
 
-const ResultsGrid = ({ clips, total, query, onClipClick }) => {
+const ResultsGrid = ({ clips, total, query, onClipClick, from }) => {
   if (!clips || clips.length === 0) {
     return (
       <div className="text-center py-16">
@@ -26,6 +26,7 @@ const ResultsGrid = ({ clips, total, query, onClipClick }) => {
               <VideoClipCard
                 clip={clip}
                 onClick={onClipClick}
+                from={from}
               />
             </div>
           </div>

@@ -175,6 +175,7 @@ function SearchMarengo3() {
                 total={total}
                 query={query}
                 onClipClick={handle_clip_click}
+                from={"Marengo 3"}
               />
             </div>
           )}

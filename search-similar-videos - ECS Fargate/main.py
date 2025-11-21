@@ -31,6 +31,7 @@ app.add_middleware(
 # CHANGE 1: Updated index name to consolidated index
 INDEX_NAME = "video_clips_consolidated"
 VECTOR_PIPELINE = "vector-norm-pipeline-consolidated-index-rrf"
+VECTOR_PIPELINE_3_VECTOR = "vector-norm-pipeline-video-clips-3-vector-rrf"
 MIN_SCORE = 0.5
 INNER_MIN_SCORE_VISUAL = INNER_MIN_SCORE_AUDIO = INNER_MIN_SCORE_TRANSCRIPTION = INNER_MIN_SCORE = 0.6
 INNER_TOP_K = 100
@@ -59,6 +60,7 @@ async def startup_event():
         logger.info("Initializing search pipelines...")
         hybrid_pipeline_exists = _create_hybrid_search_pipeline(opensearch_client)
         vector_pipeline_exists = _create_vector_search_pipeline(opensearch_client)
+        _create_vector_search_pipeline_3_vector(opensearch_client)
         
         # logger.info("Configuring S3 CORS policy...")
         # _configure_s3_cors(s3_client)
@@ -245,27 +247,22 @@ async def search_videos_marengo3(request: SearchRequest):
         # Perform search based on type
         logger.info(f"🔍 Performing {search_type} search (Marengo 3)")
         if search_type == 'hybrid':
-            # Hybrid search not yet implemented for Marengo 3, fallback to vector
             logger.info("⚠️ Hybrid search not yet implemented for Marengo 3, using vector search instead")
-            results = vector_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = vector_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'vector':
-            # All three: visual + audio + transcription (weights: 0.5, 0.3, 0.2)
-            results = vector_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = vector_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'vector_visual_audio':
-            # Visual + Audio (weights: 0.6, 0.4)
-            results = vector_search_visual_audio_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = vector_search_visual_audio_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'vector_visual_transcription':
-            # Visual + Transcription (weights: 0.6, 0.4)
-            results = vector_search_visual_transcription_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = vector_search_visual_transcription_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'vector_audio_transcription':
-            # Audio + Transcription (weights: 0.5, 0.5)
-            results = vector_search_audio_transcription_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = vector_search_audio_transcription_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'visual':
-            results = visual_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = visual_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'audio':
-            results = audio_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = audio_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         elif search_type == 'transcription':
-            results = transcription_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3')
+            results = transcription_search_marengo3(opensearch_client, query_embedding, top_k, 'video_clips_3_lucene')
         else:
             raise HTTPException(status_code=400, detail=f"Invalid search_type: {search_type}. Supported: vector, vector_visual_audio, vector_visual_transcription, vector_audio_transcription, visual, audio, transcription")
         
@@ -898,10 +895,10 @@ def vector_search(client, query_embedding: List[float], top_k: int = 10,  INDEX_
 #                 }
 #             }
 #         },
-#         "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
+#         "_source": ["video_id", "video_path", "clip_id", "timestamp_start",
 #                    "timestamp_end", "clip_text",  "thumbnail_path", "video_name", "clip_duration", "video_duration_sec"]
 #     }
-    
+
 #     response = client.search(index=INDEX_NAME, body=search_body)
 #     return parse_search_results(response)
 
@@ -948,7 +945,7 @@ def audio_search(client, query_embedding: List[float], top_k: int = 10,  INDEX_N
 
 # ============ NEW SEARCH FUNCTIONS FOR MARENGO 3 (emb_visual, emb_audio, emb_transcription) ============
 
-def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Vector search combining visual, audio, and transcription embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -960,7 +957,7 @@ def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10
                         "knn": {
                             "emb_visual": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_VISUAL
+                                "k": INNER_TOP_K
                             }
                         }
                     },
@@ -969,7 +966,7 @@ def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10
                         "knn": {
                             "emb_audio": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_AUDIO
+                                "k": INNER_TOP_K
                             }
                         }
                     },
@@ -978,7 +975,7 @@ def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10
                         "knn": {
                             "emb_transcription": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_TRANSCRIPTION
+                                "k": INNER_TOP_K
                             }
                         }
                     }
@@ -991,15 +988,15 @@ def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10
     
     if vector_pipeline_exists:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body,
-            "search_pipeline": VECTOR_PIPELINE
-        }
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": VECTOR_PIPELINE_3_VECTOR
+            }
     else:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body
-        }
+                "index": INDEX_NAME,
+                "body": search_body
+            }
     
     try:
         response = client.search(**search_params)
@@ -1010,7 +1007,7 @@ def vector_search_marengo3(client, query_embedding: List[float], top_k: int = 10
         return []
 
 
-def visual_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def visual_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Visual-only k-NN search on visual embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1018,7 +1015,7 @@ def visual_search_marengo3(client, query_embedding: List[float], top_k: int = 10
             "knn": {
                 "emb_visual": {
                     "vector": query_embedding,
-                    "min_score": 0.4
+                    "k": INNER_TOP_K
                 }
             }
         },
@@ -1035,7 +1032,7 @@ def visual_search_marengo3(client, query_embedding: List[float], top_k: int = 10
         return []
 
 
-def audio_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def audio_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Audio-only k-NN search on audio embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1043,7 +1040,7 @@ def audio_search_marengo3(client, query_embedding: List[float], top_k: int = 10,
             "knn": {
                 "emb_audio": {
                     "vector": query_embedding,
-                    "min_score": 0.4
+                    "k": INNER_TOP_K
                 }
             }
         },
@@ -1060,7 +1057,7 @@ def audio_search_marengo3(client, query_embedding: List[float], top_k: int = 10,
         return []
 
 
-def transcription_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def transcription_search_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Transcription-only k-NN search on transcription embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1068,7 +1065,7 @@ def transcription_search_marengo3(client, query_embedding: List[float], top_k: i
             "knn": {
                 "emb_transcription": {
                     "vector": query_embedding,
-                    "min_score": 0.4
+                    "k": INNER_TOP_K
                 }
             }
         },
@@ -1085,7 +1082,7 @@ def transcription_search_marengo3(client, query_embedding: List[float], top_k: i
         return []
 
 
-def vector_search_visual_audio_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def vector_search_visual_audio_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Vector search combining visual and audio embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1097,7 +1094,7 @@ def vector_search_visual_audio_marengo3(client, query_embedding: List[float], to
                         "knn": {
                             "emb_visual": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_VISUAL
+                                "k": INNER_TOP_K
                             }
                         }
                     },
@@ -1106,39 +1103,39 @@ def vector_search_visual_audio_marengo3(client, query_embedding: List[float], to
                         "knn": {
                             "emb_audio": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_AUDIO
+                                "k": INNER_TOP_K
                             }
                         }
                     }
                 ]
             }
         },
-        "_source": ["video_id", "video_path", "clip_id", "timestamp_start", 
+        "_source": ["video_id", "video_path", "clip_id", "timestamp_start",
                    "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration", "video_duration_sec"]
     }
-    
+
     if vector_pipeline_exists:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body,
-            "search_pipeline": VECTOR_PIPELINE
-        }
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": VECTOR_PIPELINE
+            }
     else:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body
-        }
-    
+                "index": INDEX_NAME,
+                "body": search_body
+            }
+
     try:
         response = client.search(**search_params)
         logger.info(f"✓ Vector search (visual+audio, Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results")
-        return parse_search_results_vector(response)
+        return parse_search_results(response)
     except Exception as e:
         logger.error(f"Vector search (visual+audio, Marengo 3) error: {e}", exc_info=True)
         return []
 
 
-def vector_search_visual_transcription_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def vector_search_visual_transcription_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Vector search combining visual and transcription embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1150,7 +1147,7 @@ def vector_search_visual_transcription_marengo3(client, query_embedding: List[fl
                         "knn": {
                             "emb_visual": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_VISUAL
+                                "k": INNER_TOP_K
                             }
                         }
                     },
@@ -1159,7 +1156,7 @@ def vector_search_visual_transcription_marengo3(client, query_embedding: List[fl
                         "knn": {
                             "emb_transcription": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_TRANSCRIPTION
+                                "k": INNER_TOP_K
                             }
                         }
                     }
@@ -1172,26 +1169,26 @@ def vector_search_visual_transcription_marengo3(client, query_embedding: List[fl
     
     if vector_pipeline_exists:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body,
-            "search_pipeline": VECTOR_PIPELINE
-        }
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": VECTOR_PIPELINE
+            }
     else:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body
-        }
+                "index": INDEX_NAME,
+                "body": search_body
+            }
     
     try:
         response = client.search(**search_params)
         logger.info(f"✓ Vector search (visual+transcription, Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results")
-        return parse_search_results_vector(response)
+        return parse_search_results(response)
     except Exception as e:
         logger.error(f"Vector search (visual+transcription, Marengo 3) error: {e}", exc_info=True)
         return []
 
 
-def vector_search_audio_transcription_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3') -> List[Dict]:
+def vector_search_audio_transcription_marengo3(client, query_embedding: List[float], top_k: int = 10, INDEX_NAME: str = 'video_clips_3_lucene') -> List[Dict]:
     """Vector search combining audio and transcription embeddings (Marengo 3)"""
     search_body = {
         "size": TOP_K,
@@ -1203,7 +1200,7 @@ def vector_search_audio_transcription_marengo3(client, query_embedding: List[flo
                         "knn": {
                             "emb_audio": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_AUDIO
+                                "k": INNER_TOP_K
                             }
                         }
                     },
@@ -1212,7 +1209,7 @@ def vector_search_audio_transcription_marengo3(client, query_embedding: List[flo
                         "knn": {
                             "emb_transcription": {
                                 "vector": query_embedding,
-                                "min_score": INNER_MIN_SCORE_TRANSCRIPTION
+                                "k": INNER_TOP_K
                             }
                         }
                     }
@@ -1225,20 +1222,20 @@ def vector_search_audio_transcription_marengo3(client, query_embedding: List[flo
     
     if vector_pipeline_exists:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body,
-            "search_pipeline": VECTOR_PIPELINE
-        }
+                "index": INDEX_NAME,
+                "body": search_body,
+                "search_pipeline": VECTOR_PIPELINE
+            }
     else:
         search_params = {
-            "index": INDEX_NAME,
-            "body": search_body
-        }
+                "index": INDEX_NAME,
+                "body": search_body
+            }
     
     try:
         response = client.search(**search_params)
         logger.info(f"✓ Vector search (audio+transcription, Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results")
-        return parse_search_results_vector(response)
+        return parse_search_results(response)
     except Exception as e:
         logger.error(f"Vector search (audio+transcription, Marengo 3) error: {e}", exc_info=True)
         return []
@@ -1346,6 +1343,45 @@ def _create_vector_search_pipeline(client):
     
     return True
 
+def _create_vector_search_pipeline_3_vector(client):
+    """Create search pipeline with score normalization for vector search"""
+    
+
+    pipeline_body = {
+        "description": "Post processor for hybrid RRF search",
+        "phase_results_processors": [
+            {
+                "score-ranker-processor": {
+                    "combination": {
+                        "technique": "rrf",
+                        "rank_constant": 60,
+                        "parameters": {
+                            "weights":[
+                                0.5,
+                                0.4,
+                                0.1
+                            ]
+                        }
+                    }
+                }
+            }
+        ]
+    }
+
+    
+    try:
+        client.search_pipeline.put(
+                id=VECTOR_PIPELINE_3_VECTOR,
+                body=pipeline_body
+            )
+        logger.info("✓ Created marengo-3-vector search pipeline with normalization")
+
+    except Exception as e:
+        logger.warning(f"✗ Vector pipeline creation error: {e}")
+        return False
+    
+    return True
+
 
 def parse_search_results(response: Dict) -> List[Dict]:
     """Parse OpenSearch response into results list"""
@@ -1385,7 +1421,7 @@ import math
 #     # Second loop: apply normalized score
 #     for r in results:
 #         r['score'] = r['score'] / norm
-    
+
 #     print(results)
 
 #     return results
@@ -1497,7 +1533,7 @@ def parse_search_results_vector(response):
 #     if not bucket_name:
 #         logger.warning("AWS_S3_BUCKET not set, skipping CORS configuration")
 #         return
-    
+
 #     cors_config = {
 #         'CORSRules': [
 #             {
@@ -1513,7 +1549,7 @@ def parse_search_results_vector(response):
 #             }
 #         ]
 #     }
-    
+
 #     try:
 #         s3_client.put_bucket_cors(Bucket=bucket_name, CORSConfiguration=cors_config)
 #         logger.info(f"✓ S3 CORS policy configured for bucket: {bucket_name}")

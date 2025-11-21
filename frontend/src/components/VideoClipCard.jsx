@@ -3,7 +3,7 @@ import { Play, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import { formatTimestamp } from '../utils/formatTime';
 import { use_thumbnail } from '../hooks/useThumbnail';
 
-const VideoClipCard = ({ clip, onClick }) => {
+const VideoClipCard = ({ clip, onClick, from }) => {
   const { video_id, video_path, timestamp_start, timestamp_end, clip_text, score, presigned_url, thumbnail_path, video_duration_sec } = clip;
 
   // Normalize score to 0-100 range
@@ -115,7 +115,6 @@ const VideoClipCard = ({ clip, onClick }) => {
           <video
             ref={videoRef}
             src={videoUrl}
-            muted
             playsInline
             preload="none"
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${isHovering ? 'opacity-100' : 'opacity-0'}`}
@@ -123,10 +122,13 @@ const VideoClipCard = ({ clip, onClick }) => {
           />
         )}
 
-        {/* Confidence indicator */}
+        {
+          from !== "Marengo 3" && (
         <div className={`absolute top-2 right-24 px-3 py-1 rounded text-xs font-semibold text-white ${indicatorBg}`}>
           {confidenceLabel}
         </div>
+          )
+      }
         
         {/* Timeline bar - floating above bottom */}
         <div className="absolute bottom-2 left-0.5 right-0.5 h-1.5 bg-gray-400/50 rounded">
