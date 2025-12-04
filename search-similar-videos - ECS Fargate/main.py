@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(name=__name__)
 
 
-app = FastAPI(title="Video Search Service", version="1.0.0")
+app = FastAPI(title="Video Search Service", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None, swagger_ui_oauth2_redirect_url= None)
 
 app.add_middleware(
     middleware_class=CORSMiddleware,
