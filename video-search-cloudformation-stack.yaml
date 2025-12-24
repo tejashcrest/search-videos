@@ -101,14 +101,14 @@ Resources:
                 Action:
                   - s3:GetObject
                 Resource: !Sub 
-                  - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                  - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
                   - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                     TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
               - Effect: Allow
                 Action:
                   - s3:PutObject
                 Resource: !Sub 
-                  - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                  - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
                   - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                     TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
               - Effect: Allow
@@ -116,7 +116,7 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
               - Effect: Allow
@@ -198,11 +198,11 @@ Resources:
                   - s3:PutObject
                 Resource:
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
@@ -256,11 +256,11 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}}/*'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
               - Effect: Allow
@@ -454,11 +454,11 @@ Resources:
                   - s3:PutObject
                 Resource:
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
               - Effect: Allow
@@ -1197,7 +1197,7 @@ Resources:
               Value: !Sub 'https://${OpenSearchDomain.DomainEndpoint}'
             - Name: AWS_S3_BUCKET
               Value: !Sub 
-                - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                 - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                   TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
             - Name: PORT
@@ -1445,7 +1445,7 @@ Resources:
         Variables:
           STATE_MACHINE_ARN: !Ref VideoProcessingStateMachine
           VIDEO_BUCKET: !Sub 
-            - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+            - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
             - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
               TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
           OUTPUT_BUCKET: !Sub '${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
@@ -1494,9 +1494,8 @@ Resources:
       - InvokeStepFunctionPermissionFromS3  # ← ADD THIS
     Properties:
       BucketName: !Sub 
-        - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+        - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
         - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
-          TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
       CorsConfiguration:
         CorsRules:
           - AllowedOrigins:
@@ -1605,7 +1604,7 @@ Resources:
                   - s3:ListBucketVersions
                 Resource: 
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
@@ -1615,7 +1614,7 @@ Resources:
                   - s3:DeleteObjectVersion
                 Resource: 
                   - !Sub 
-                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}/*'
+                    - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
                     - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
                       TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
                   - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}/*'
@@ -1737,9 +1736,8 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !Sub 
-        - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${TargetAccountId}-${env}'
+        - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
         - VideoBucket: !FindInMap [BucketNames, Video, BaseName]
-          TargetAccountId: !FindInMap [EnvironmentConfig, !Ref env, AccountId]
       SourceAccount: !Ref AWS::AccountId
 
   CreateSnapshotFunction:
