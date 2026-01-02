@@ -54,7 +54,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-ecs-task-execution-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -97,7 +97,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-ecs-task-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -160,7 +160,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-search-similar-videos-ecs-task-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -249,7 +249,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-invoke-bedrock-marengo-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -346,7 +346,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-invoke-video-processing-step-function-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -387,7 +387,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-opensearch-snapshot-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -429,7 +429,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-create-opensearch-snapshot-lambda-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -475,7 +475,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-store-embeddings-opensearch-lambda-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -568,7 +568,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-complete-video-processing-pipeline-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -648,7 +648,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-update-frontend-config-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1106,7 +1106,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-opensearch-role-mapper-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1136,7 +1136,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-opensearch-admin'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1176,7 +1176,7 @@ Resources:
       DomainName: !Sub '${StackPrefix}-${env}-aos'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1229,7 +1229,7 @@ Resources:
       ClusterName: !Sub '${StackPrefix}-${env}-cluster'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1244,7 +1244,7 @@ Resources:
       Family: !Sub '${StackPrefix}-${env}-video-preprocessing-task'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1279,7 +1279,7 @@ Resources:
       Family: !Sub '${StackPrefix}-${env}-search-similar-videos-task'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1329,7 +1329,7 @@ Resources:
       Name: !Sub '${StackPrefix}-${env}-alb'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1348,7 +1348,7 @@ Resources:
       Name: !Sub '${StackPrefix}-${env}-tg'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1383,7 +1383,7 @@ Resources:
       ServiceName: !Sub '${StackPrefix}-${env}-service'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1436,7 +1436,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-invoke-bedrock-marengo'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1548,7 +1548,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-store-embeddings-opensearch'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1586,7 +1586,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-invoke-video-processing-step-function'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1653,7 +1653,7 @@ Resources:
         - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1693,7 +1693,7 @@ Resources:
       BucketName: !Sub '${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1755,7 +1755,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-empty-bucket-lambda-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1801,7 +1801,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-empty-bucket'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -1932,7 +1932,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-create-opensearch-snapshot'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2039,7 +2039,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-opensearch-role-mapper'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2217,7 +2217,7 @@ Resources:
     Properties:
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2249,7 +2249,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-manage-bucket-policy-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2294,7 +2294,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-manage-bucket-policy'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2427,7 +2427,7 @@ Resources:
     Properties:
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2460,7 +2460,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-update-frontend-config'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2678,7 +2678,7 @@ Resources:
       StateMachineName: !Sub '${StackPrefix}-${env}-pipeline'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2836,7 +2836,7 @@ Resources:
       RoleName: !Sub '${StackPrefix}-${env}-upload-videos-role'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
@@ -2884,7 +2884,7 @@ Resources:
       FunctionName: !Sub '${StackPrefix}-${env}-upload-videos'
       Tags:
       - Key: Project
-        Value: !Sub '${env}-videoSearchDemo-${StackPrefix}'
+        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
       - Key: Environment
         Value: !Ref env
       - Key: StackPrefix
