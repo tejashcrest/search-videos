@@ -10,8 +10,9 @@ Description: |
   - All IAM roles follow least-privilege principle with app-scoped OpenSearch roles.
   - Custom resource Lambda configures OpenSearch FGAC role mappings during stack creation.
   - REQUIRED: Lambda layer ZIP files must exist in S3 before deployment:
-    * s3://{env}-aihouse-dist-{TargetAccountId}/lambda-artifacts/opensearch-query-dependencies-2fb22b80-caf2-4d3f-84a6-3f863bf3c409.zip
-    * s3://{env}-aihouse-dist-{TargetAccountId}/lambda-artifacts/ffmpeg-video-processing-dependencies-697fac5e-fb3f-4814-b610-f0d2d3812616.zip
+    * s3://{LambdaDependenciesBucket}/{LambdaDependenciesPrefix}opensearch-query-dependencies-*.zip
+    * s3://{LambdaDependenciesBucket}/{LambdaDependenciesPrefix}ffmpeg-video-processing-dependencies-*.zip
+    * s3://{LambdaDependenciesBucket}/{LambdaDependenciesPrefix}store-embeddings-lambda.zip
 
 Parameters:
   env:
@@ -25,27 +26,18 @@ Parameters:
     Description: 'Prefix for all resource names to avoid collisions (Max. - 8 characters)'
     AllowedPattern: '[a-zA-Z0-9-]+'
     MaxLength: 8
-
-Mappings:
-  EnvironmentConfig:
-    local:
-      AccountId: "943143228843"
-      BucketBaseName: "aihouse-dist"
-    dev:
-      AccountId: "726510512353"
-      BucketBaseName: "aihouse-dist"
-    stage:
-      AccountId: "521639666075"
-      BucketBaseName: "aihouse-nuvista-dist"
-    demo:
-      AccountId: "027089197617"
-      BucketBaseName: "aihouse-nuvista-dist"
-    prod:
-      AccountId: "144321573266"
-      BucketBaseName: "aihouse-nuvista-dist"
-  BucketNames:
-    Video:
-      BaseName: 'videos'
+  LambdaDependenciesBucket:
+    Type: String
+    Description: 'S3 bucket containing Lambda layer dependencies and artifacts'
+    Default: 'my-lambda-dependencies-bucket'
+  LambdaDependenciesPrefix:
+    Type: String
+    Description: 'S3 prefix path for Lambda artifacts (e.g., lambda-artifacts/ or demo-apps-assets/video-search-demo/lambda-artifacts/)'
+    Default: 'lambda-artifacts/'
+  VideoBucketBaseName:
+    Type: String
+    Description: 'Base name for video bucket (e.g., videos)'
+    Default: 'videos'
 
 Resources:
   ECSTaskExecutionRole:
@@ -117,25 +109,15 @@ Resources:
           - Effect: Allow
             Action:
             - s3:GetObject
-            Resource: !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            Resource: !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
           - Effect: Allow
             Action:
             - s3:PutObject
-            Resource: !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            Resource: !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
           - Effect: Allow
             Action:
             - s3:ListBucket
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            Resource: !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
           - Effect: Allow
             Action:
             - s3:PutObject
@@ -221,14 +203,8 @@ Resources:
             - s3:ListBucket
             - s3:PutObject
             Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
             - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
             - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}/*'
       - PolicyName: SSMMessagesAccess
@@ -286,14 +262,8 @@ Resources:
             - s3:PutObject
             - s3:ListBucket
             Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
           - Effect: Allow
             Action:
             - s3:GetObject
@@ -407,21 +377,13 @@ Resources:
           - Action:
             - s3:ListBucket
             Effect: Allow
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            Resource: !Sub 'arn:aws:s3:::${LambdaDependenciesBucket}'
           - Action:
             - s3:GetObject
             - s3:PutObject
             - s3:DeleteObject
             Effect: Allow
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}/*'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            Resource: !Sub 'arn:aws:s3:::${LambdaDependenciesBucket}/*'
 
   CreateSnapshotLambdaRole:
     Type: AWS::IAM::Role
@@ -512,14 +474,8 @@ Resources:
             - s3:ListBucket
             - s3:PutObject
             Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
           - Effect: Allow
             Action:
             - s3:PutObject
@@ -560,7 +516,6 @@ Resources:
             - aoss:APIAccessAll
             Resource:
             - !Sub 'arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/*'
-            - !Sub 'arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/10hkpuukzb763aqe0uhi'
 
   StepFunctionsExecutionRole:
     Type: AWS::IAM::Role
@@ -641,50 +596,6 @@ Resources:
             - xray:GetSamplingTargets
             Resource: '*'
 
-  # ============ NEW IAM ROLE FOR FRONTEND CONFIG UPDATE LAMBDA ============
-  UpdateFrontendConfigLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub '${StackPrefix}-${env}-update-frontend-config-role'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-      - PolicyName: S3ConfigAccess
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - s3:PutObject
-            - s3:PutObjectAcl
-            - s3:GetObject
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}/*'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-          - Effect: Allow
-            Action:
-            - s3:ListBucket
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -1309,10 +1220,7 @@ Resources:
         - Name: OPENSEARCH_CLUSTER_HOST
           Value: !Sub 'https://${OpenSearchDomain.DomainEndpoint}'
         - Name: AWS_S3_BUCKET
-          Value: !Sub
-            - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-            - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-              TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+          Value: !Sub '${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
         - Name: PORT
           Value: '8000'
         LogConfiguration:
@@ -1520,11 +1428,8 @@ Resources:
       CompatibleRuntimes:
       - python3.13
       Content:
-        S3Bucket: !Sub
-          - '${env}-${FrontendBucket}-${TargetAccountId}'
-          - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-            TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-        S3Key: demo-apps-assets/video-search-demo/lambda-artifacts/opensearch-query-dependencies-2fb22b80-caf2-4d3f-84a6-3f863bf3c409.zip
+        S3Bucket: !Ref LambdaDependenciesBucket
+        S3Key: !Sub '${LambdaDependenciesPrefix}opensearch-query-dependencies-2fb22b80-caf2-4d3f-84a6-3f863bf3c409.zip'
 
   FfmpegVideoProcessingDependenciesLayer:
     Type: AWS::Lambda::LayerVersion
@@ -1533,11 +1438,8 @@ Resources:
       CompatibleRuntimes:
       - python3.13
       Content:
-        S3Bucket: !Sub
-          - '${env}-${FrontendBucket}-${TargetAccountId}'
-          - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-            TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-        S3Key: demo-apps-assets/video-search-demo/lambda-artifacts/ffmpeg-video-processing-dependencies-697fac5e-fb3f-4814-b610-f0d2d3812616.zip
+        S3Bucket: !Ref LambdaDependenciesBucket
+        S3Key: !Sub '${LambdaDependenciesPrefix}ffmpeg-video-processing-dependencies-697fac5e-fb3f-4814-b610-f0d2d3812616.zip'
 
   StoreEmbeddingsFunction:
     Type: AWS::Lambda::Function
@@ -1572,11 +1474,8 @@ Resources:
         SecurityGroupIds:
         - !Ref LambdaSecurityGroup
       Code:
-        S3Bucket: !Sub
-          - '${env}-${FrontendBucket}-${TargetAccountId}'
-          - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-            TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-        S3Key: 'demo-apps-assets/video-search-demo/lambda-artifacts/store-embeddings-lambda.zip'
+        S3Bucket: !Ref LambdaDependenciesBucket
+        S3Key: !Sub '${LambdaDependenciesPrefix}store-embeddings-lambda.zip'
       EphemeralStorage:
         Size: 2048
 
@@ -1599,10 +1498,7 @@ Resources:
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Ref VideoProcessingStateMachine
-          VIDEO_BUCKET: !Sub
-            - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-            - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-              TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+          VIDEO_BUCKET: !Sub '${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
           OUTPUT_BUCKET: !Sub '${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
       Code:
         ZipFile: |
@@ -1648,9 +1544,7 @@ Resources:
     DependsOn:
     - InvokeStepFunctionPermissionFromS3 # ← ADD THIS
     Properties:
-      BucketName: !Sub
-        - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-        - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
+      BucketName: !Sub '${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
       Tags:
       - Key: Project
         Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
@@ -1779,20 +1673,14 @@ Resources:
             - s3:ListBucket
             - s3:ListBucketVersions
             Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
             - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}'
           - Effect: Allow
             Action:
             - s3:DeleteObject
             - s3:DeleteObjectVersion
             Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+            - !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}/*'
             - !Sub 'arn:aws:s3:::${StackPrefix}-processed-videos-${AWS::Region}-${AWS::AccountId}-${env}/*'
 
   EmptyBucketFunction:
@@ -1918,9 +1806,7 @@ Resources:
       FunctionName: !GetAtt InvokeStepFunctionFunction.Arn
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !Sub
-        - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-        - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
+      SourceArn: !Sub 'arn:aws:s3:::${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
       SourceAccount: !Ref AWS::AccountId
 
   CreateSnapshotFunction:
@@ -1946,10 +1832,7 @@ Resources:
         Variables:
           OPENSEARCH_CLUSTER_HOST: !Sub 'https://${OpenSearchDomain.DomainEndpoint}'
           SNAPSHOT_ROLE_ARN: !GetAtt OpenSearchSnapshotRole.Arn
-          S3_BUCKET: !Sub
-            - '${env}-${FrontendBucket}-${TargetAccountId}'
-            - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-              TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
+          S3_BUCKET: !Ref LambdaDependenciesBucket
           REPO_NAME: !Sub '${StackPrefix}-${env}-snapshot-repo'
 
       Layers:
@@ -2203,224 +2086,6 @@ Resources:
                   send_response(event, context, 'FAILED', {'Error': str(e)})
 
   # ============ CLOUDFRONT RESOURCES ============
-  FrontendOAC:
-    Type: AWS::CloudFront::OriginAccessControl
-    Properties:
-      OriginAccessControlConfig:
-        Name: !Sub '${StackPrefix}-${env}-frontend-oac'
-        OriginAccessControlOriginType: s3
-        SigningBehavior: always
-        SigningProtocol: sigv4
-
-  FrontendDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      DistributionConfig:
-        Enabled: true
-        DefaultRootObject: index.html
-        HttpVersion: http2
-        IPV6Enabled: true
-        DefaultCacheBehavior:
-          TargetOriginId: FrontendS3Origin
-          ViewerProtocolPolicy: redirect-to-https
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS "CachingOptimized"
-        Origins:
-        - Id: FrontendS3Origin
-          DomainName: !Sub
-            - '${env}-${FrontendBucket}-${TargetAccountId}.s3.${AWS::Region}.${AWS::URLSuffix}'
-            - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-              TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-          OriginAccessControlId: !GetAtt FrontendOAC.Id
-          OriginPath: '/demo-apps-assets/video-search-demo/FE'
-          S3OriginConfig:
-            OriginAccessIdentity: ""
-
-  # Lambda Role for managing bucket policy
-  ManageBucketPolicyLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub '${StackPrefix}-${env}-manage-bucket-policy-role'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-      - PolicyName: S3BucketPolicyAccess
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - s3:PutBucketPolicy
-            - s3:GetBucketPolicy
-            - s3:DeleteBucketPolicy
-            Resource: !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      - PolicyName: !Sub '${StackPrefix}-AllowAssumeCrossAccountRole'
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action: sts:AssumeRole
-            Resource: !Sub
-              - 'arn:aws:iam::${TargetAccountId}:role/CrossAccountS3PolicyUpdater'
-              - TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-
-  # Lambda Function for managing bucket policy
-  ManageBucketPolicyFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${StackPrefix}-${env}-manage-bucket-policy'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      Runtime: python3.13
-      Handler: index.handler
-      Role: !GetAtt ManageBucketPolicyLambdaRole.Arn
-      Timeout: 60
-      Environment:
-        Variables:
-          CROSS_ACCOUNT_ROLE_ARN: !Sub
-            - 'arn:aws:iam::${TargetAccountId}:role/CrossAccountS3PolicyUpdater'
-            - TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import urllib3
-          import os
-          from botocore.exceptions import ClientError
-
-          http = urllib3.PoolManager()
-
-          def get_s3_client():
-              """Get S3 client by assuming cross-account role"""
-              role_arn = os.environ['CROSS_ACCOUNT_ROLE_ARN']
-              sts = boto3.client('sts')
-              try:
-                  assumed_role = sts.assume_role(
-                      RoleArn=role_arn,
-                      RoleSessionName="S3BucketPolicyUpdaterSession"
-                  )
-                  credentials = assumed_role['Credentials']
-                  return boto3.client(
-                      's3',
-                      aws_access_key_id=credentials['AccessKeyId'],
-                      aws_secret_access_key=credentials['SecretAccessKey'],
-                      aws_session_token=credentials['SessionToken'],
-                      region_name='us-east-1'
-                  )
-              except Exception as e:
-                  print(f"Error assuming role {role_arn}: {str(e)}")
-                  raise
-
-          def send(event, context, status, data):
-              """Send CloudFormation response"""
-              response = {
-                  "Status": status,
-                  "Reason": data.get("Error", "OK"),
-                  "PhysicalResourceId": context.log_stream_name,
-                  "StackId": event["StackId"],
-                  "RequestId": event["RequestId"],
-                  "LogicalResourceId": event["LogicalResourceId"],
-                  "Data": data,
-              }
-              http.request(
-                  "PUT",
-                  event["ResponseURL"],
-                  body=json.dumps(response).encode("utf-8"),
-                  headers={"Content-Type": ""}
-              )
-
-          def handler(event, context):
-              try:
-                  print(f"Event: {json.dumps(event)}")
-                  props = event["ResourceProperties"]
-                  bucket = props["BucketName"]
-                  dist_arn = props["DistributionArn"]
-                  sid = props["StackPrefix"]
-
-                  # Get S3 client via cross-account role
-                  s3 = get_s3_client()
-
-                  # Get existing policy
-                  try:
-                      res = s3.get_bucket_policy(Bucket=bucket)
-                      policy = json.loads(res["Policy"])
-                  except ClientError as e:
-                      if e.response["Error"]["Code"] == "NoSuchBucketPolicy":
-                          policy = {"Version": "2012-10-17", "Statement": []}
-                      else:
-                          raise
-
-                  if event["RequestType"] in ["Create", "Update"]:
-                      # Add or update policy statement
-                      if not any(s.get("Sid") == sid for s in policy["Statement"]):
-                          policy["Statement"].append({
-                              "Sid": sid,
-                              "Effect": "Allow",
-                              "Principal": {"Service": "cloudfront.amazonaws.com"},
-                              "Action": "s3:GetObject",
-                              "Resource": f"arn:aws:s3:::{bucket}/demo-apps-assets/video-search-demo/FE/*",
-                              "Condition": {"StringEquals": {"AWS:SourceArn": dist_arn}}
-                          })
-                          s3.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
-                      print("Bucket policy successfully updated via AssumeRole")
-
-                  elif event["RequestType"] == "Delete":
-                      # Remove policy statement
-                      original_len = len(policy["Statement"])
-                      policy["Statement"] = [s for s in policy["Statement"] if s.get("Sid") != sid]
-
-                      if len(policy["Statement"]) != original_len:
-                          if policy["Statement"]:
-                              s3.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
-                          else:
-                              s3.delete_bucket_policy(Bucket=bucket)
-                      print("Bucket policy successfully cleaned up via AssumeRole")
-
-                  send(event, context, "SUCCESS", {})
-              except Exception as e:
-                  print(f"Error: {str(e)}")
-                  send(event, context, "FAILED", {"Error": str(e)})
-
-  # Custom Resource (replaces the deleted FrontendBucketPolicy)
-  FrontendBucketPolicyCustomResource:
-    Type: Custom::S3BucketPolicy
-    Properties:
-      ServiceToken: !GetAtt ManageBucketPolicyFunction.Arn
-      BucketName: !Sub
-        - '${env}-${FrontendBucket}-${TargetAccountId}'
-        - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-          TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      DistributionArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}'
-      StackPrefix: !Sub '${env}-${StackPrefix}'
-
   ApiDistribution:
     Type: AWS::CloudFront::Distribution
     DependsOn: ApplicationLoadBalancer
@@ -2449,211 +2114,6 @@ Resources:
             OriginProtocolPolicy: http-only
             HTTPPort: 8000
             HTTPSPort: 443
-
-  # ============ NEW LAMBDA FUNCTION FOR FRONTEND CONFIG UPDATE ============
-  UpdateFrontendConfigLambda:
-    Type: AWS::Lambda::Function
-    DependsOn:
-    - ApplicationLoadBalancer
-    - ECSService
-    Properties:
-      FunctionName: !Sub '${StackPrefix}-${env}-update-frontend-config'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      Runtime: python3.11
-      Handler: index.lambda_handler
-      Timeout: 60
-      MemorySize: 256
-      Role: !GetAtt UpdateFrontendConfigLambdaRole.Arn
-      Environment:
-        Variables:
-          FRONTEND_S3_BUCKET: !Sub
-            - '${env}-${FrontendBucket}-${TargetAccountId}'
-            - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-              TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import urllib3
-          from datetime import datetime
-          import os
-
-          http = urllib3.PoolManager()
-          s3 = boto3.client('s3')
-
-          def send_response(event, context, status, data=None):
-              """Send response to CloudFormation"""
-              response_body = {
-                  'Status': status,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', 'UpdateFrontendConfig'),
-                  'StackId': event['StackId'],
-                  'RequestId': event['RequestId'],
-                  'LogicalResourceId': event['LogicalResourceId'],
-                  'Data': data or {}
-              }
-              
-              try:
-                  http.request(
-                      'PUT',
-                      event['ResponseURL'],
-                      body=json.dumps(response_body),
-                      headers={'Content-Type': 'application/json'}
-                  )
-              except Exception as e:
-                  print(f"Failed to send response: {str(e)}")
-
-          def lambda_handler(event, context):
-              """Update frontend config.json and call demo completion API"""
-              print(f"Event: {json.dumps(event)}")
-              
-              # Initialize result data with defaults
-              result_data = {
-                  'BackendUrl': None,
-                  'ConfigUploaded': None
-              }
-              
-              try:
-                  if event['RequestType'] == 'Delete':
-                      print("Delete request - no action needed")
-                      send_response(event, context, 'SUCCESS')
-                      return
-                  
-                  # Get values from custom resource properties
-                  resource_properties = event.get('ResourceProperties', {})
-                  api_base_url = resource_properties.get('ApiBaseUrl')
-                  
-                  if not api_base_url:
-                      error_msg = "ApiBaseUrl not provided in custom resource properties"
-                      print(f"❌ Critical Error: {error_msg}")
-                      send_response(event, context, 'FAILED', {'Error': error_msg})
-                      return
-                  
-                  s3_bucket = os.environ.get('FRONTEND_S3_BUCKET')
-                  
-                  backend_url = api_base_url.rstrip("/")
-                  result_data['BackendUrl'] = backend_url
-                  
-                  print(f"✅ Backend URL (API CloudFront): {backend_url}")
-                  
-                  # Create config.json
-                  config = {
-                      "backendUrl": backend_url,
-                      "apiVersion": "v1",
-                      "environment": "production",
-                      "features": {
-                          "marengo3Enabled": True,
-                          "uploadEnabled": True,
-                          "maxUploadSizeMB": 5
-                      },
-                      "endpoints": {
-                          "search": "/search",
-                          "search3": "/search-3",
-                          "list": "/list",
-                          "upload": "/generate-upload-presigned-url",
-                          "health": "/health"
-                      },
-                      "metadata": {
-                          "lastUpdated": datetime.utcnow().isoformat() + "Z",
-                          "version": "1.0.0",
-                          "source": "cloudformation-lambda"
-                      }
-                  }
-                  
-                  print(f"📄 Config created: {json.dumps(config, indent=2)}")
-                  
-                  # Upload to S3 with error handling
-                  if s3_bucket:
-                      try:
-                          print(f"📤 Uploading config.json to s3://{s3_bucket}/demo-apps-assets/video-search-demo/FE/config.json")
-                          s3.put_object(
-                              Bucket=s3_bucket,
-                              Key='demo-apps-assets/video-search-demo/FE/config.json',
-                              Body=json.dumps(config, indent=2),
-                              ContentType='application/json',
-                              ContentDisposition='inline',
-                              CacheControl='no-cache, no-store, must-revalidate',
-                              Metadata={
-                                  'updated-by': 'cloudformation',
-                                  'backend-url': backend_url
-                              }
-                          )
-                          
-                          print("✅ config.json uploaded successfully")
-                          result_data['ConfigUploaded'] = f's3://{s3_bucket}/demo-apps-assets/video-search-demo/FE/config.json'
-                          result_data['S3UploadSuccess'] = True
-                          
-                      except Exception as s3_error:
-                          error_msg = f"S3 upload failed: {str(s3_error)}"
-                          print(f"❌ {error_msg}")
-                          # Continue execution - don't fail the stack for S3 errors
-                  else:
-                      error_msg = "FRONTEND_S3_BUCKET environment variable not set"
-                      print(f"⚠️ Warning: {error_msg}")
-                  
-                  # Send SUCCESS response to CloudFormation
-                  print(f"📊 Final result: {json.dumps(result_data, indent=2)}")
-                  send_response(event, context, 'SUCCESS', result_data)
-                  
-                  return {
-                      'statusCode': 200,
-                      'body': json.dumps(result_data)
-                  }
-                  
-              except Exception as e:
-                  error_msg = f"Critical error in lambda execution: {str(e)}"
-                  print(f"❌ {error_msg}")
-                  import traceback
-                  traceback.print_exc()
-                  
-                  send_response(event, context, 'FAILED', {'Error': error_msg})
-                  
-                  return {
-                      'statusCode': 500,
-                      'body': json.dumps({'Error': error_msg})
-                  }
-
-  OpenSearchRoleMappingCustomResource:
-    Type: Custom::OpenSearchRoleMapping
-    DependsOn:
-    - OpenSearchDomain
-    - OpenSearchRoleMappingLambda
-    - StoreEmbeddingsLambdaRole
-    - CreateSnapshotLambdaRole
-    - SearchSimilarVideosTaskRole
-    Properties:
-      ServiceToken: !GetAtt OpenSearchRoleMappingLambda.Arn
-      DomainEndpoint: !GetAtt OpenSearchDomain.DomainEndpoint
-      AdminRoleArn: !GetAtt OpenSearchAdminRole.Arn
-      RoleMappings:
-        all_access:
-        - !GetAtt StoreEmbeddingsLambdaRole.Arn
-        - !GetAtt CreateSnapshotLambdaRole.Arn
-        - !GetAtt SearchSimilarVideosTaskRole.Arn
-        - !GetAtt ECSTaskRole.Arn
-        - !Sub 'arn:aws:iam::${AWS::AccountId}:root'
-
-  # ============ NEW CUSTOM RESOURCE FOR FRONTEND CONFIG UPDATE ============
-  UpdateFrontendConfigCustomResource:
-    Type: Custom::UpdateFrontendConfig
-    DependsOn:
-    - ECSService
-    - ApplicationLoadBalancer
-    - UpdateFrontendConfigLambda
-    - ApiDistribution
-    Properties:
-      ServiceToken: !GetAtt UpdateFrontendConfigLambda.Arn
-      FrontendBucket: !Sub
-        - '${env}-${FrontendBucket}-${TargetAccountId}'
-        - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-          TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      ApiBaseUrl: !Sub 'https://${ApiDistribution.DomainName}'
-      Trigger: !Sub '${AWS::StackName}-${ApplicationLoadBalancer}'
 
   InvokeBedrockMarengoInvokePermission:
     Type: AWS::Lambda::Permission
@@ -2829,180 +2289,22 @@ Resources:
           }
         }
 
-  # ============ VIDEO UPLOAD LAMBDA ROLE ============
-  UploadVideosLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub '${StackPrefix}-${env}-upload-videos-role'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-      - PolicyName: S3Access
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - s3:PutObject
-            - s3:CopyObject
-            - s3:GetObject
-            - s3:ListBucket
-            Resource:
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}/*'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}/*'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-            - !Sub
-              - 'arn:aws:s3:::${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-              - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-            - !Sub
-              - 'arn:aws:s3:::${env}-${FrontendBucket}-${TargetAccountId}'
-              - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-                TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-
-  # ============ VIDEO UPLOAD LAMBDA FUNCTION ============
-  UploadVideosFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${StackPrefix}-${env}-upload-videos'
-      Tags:
-      - Key: Project
-        Value: !Sub '${env}-Video-Search-Demo-${StackPrefix}'
-      - Key: Environment
-        Value: !Ref env
-      - Key: StackPrefix
-        Value: !Ref StackPrefix
-      Runtime: python3.13
-      Handler: index.lambda_handler
-      Timeout: 300
-      MemorySize: 512
-      Role: !GetAtt UploadVideosLambdaRole.Arn
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import urllib3
-          import time
-
-          http = urllib3.PoolManager()
-          s3 = boto3.client('s3')
-
-          def send_response(event, context, status, data=None):
-              response_body = {
-                  'Status': status,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', 'UploadVideos'),
-                  'StackId': event['StackId'],
-                  'RequestId': event['RequestId'],
-                  'LogicalResourceId': event['LogicalResourceId'],
-                  'Data': data or {}
-              }
-              try:
-                  http.request('PUT', event['ResponseURL'], 
-                      body=json.dumps(response_body),
-                      headers={'Content-Type': 'application/json'})
-              except Exception as e:
-                  print(f"Failed to send response: {str(e)}")
-
-          def lambda_handler(event, context):
-              print(f"Event: {json.dumps(event)}")
-              
-              try:
-                  if event['RequestType'] == 'Delete':
-                      send_response(event, context, 'SUCCESS')
-                      return
-                  
-                  props = event['ResourceProperties']
-                  target_bucket = props['TargetBucket']
-                  source_bucket = props.get('SourceBucket')
-                  source_prefix = props.get('SourcePrefix', '')
-                  videos = props.get('Videos', [])
-                  
-                  uploaded = []
-                  
-                  # Copy from source bucket if specified
-                  if source_bucket and source_prefix:
-                      print(f"Copying videos from s3://{source_bucket}/{source_prefix}")
-                      paginator = s3.get_paginator('list_objects_v2')
-                      for page in paginator.paginate(Bucket=source_bucket, Prefix=source_prefix):
-                          for obj in page.get('Contents', []):
-                              key = obj['Key']
-                              if key.lower().endswith(('.mp4', '.mov', '.avi')):
-                                  filename = key.split('/')[-1]
-                                  s3.copy_object(
-                                      CopySource={'Bucket': source_bucket, 'Key': key},
-                                      Bucket=target_bucket,
-                                      Key=filename
-                                  )
-                                  uploaded.append(filename)
-                                  print(f"Copied: {filename}")
-                  
-                  time.sleep(120)
-
-                  # Copy specific videos
-                  for video in videos:
-                      src_bucket = video['Bucket']
-                      src_key = video['Key']
-                      dest_key = video.get('DestKey', src_key.split('/')[-1])
-                      
-                      s3.copy_object(
-                          CopySource={'Bucket': src_bucket, 'Key': src_key},
-                          Bucket=target_bucket,
-                          Key=dest_key
-                      )
-                      uploaded.append(dest_key)
-                      print(f"Copied: {dest_key}")
-                  
-                  send_response(event, context, 'SUCCESS', {
-                      'VideosUploaded': len(uploaded),
-                      'Files': uploaded
-                  })
-                  
-              except Exception as e:
-                  print(f"Error: {str(e)}")
-                  import traceback
-                  traceback.print_exc()
-                  send_response(event, context, 'FAILED', {'Error': str(e)})
-
-  # ============ CUSTOM RESOURCE TO UPLOAD VIDEOS ============
-  UploadVideosCustomResource:
-    Type: Custom::UploadVideos
-    DependsOn:
-    - VideoBucket
-    - VideoProcessingStateMachine
-    - ECSService
-    - OpenSearchDomain
-    Properties:
-      ServiceToken: !GetAtt UploadVideosFunction.Arn
-      TargetBucket: !Sub
-        - '${StackPrefix}-${VideoBucket}-${AWS::Region}-${AWS::AccountId}-${env}'
-        - VideoBucket: !FindInMap [ BucketNames, Video, BaseName ]
-      SourceBucket: !Sub
-        - '${env}-${FrontendBucket}-${TargetAccountId}'
-        - FrontendBucket: !FindInMap [ EnvironmentConfig, !Ref env, BucketBaseName ]
-          TargetAccountId: !FindInMap [ EnvironmentConfig, !Ref env, AccountId ]
-      SourcePrefix: 'demo-apps-assets/video-search-demo/sample-videos/'
-      Videos: []
-
 Outputs:
-  CloudFrontURL:
-    Description: CloudFront URL for the frontend
-    Value: !Sub 'https://${FrontendDistribution.DomainName}'
+  ApiCloudFrontURL:
+    Description: CloudFront URL for the API
+    Value: !Sub 'https://${ApiDistribution.DomainName}'
     Export:
-      Name: !Sub '${AWS::StackName}-FrontendCloudFrontDomainName'
+      Name: !Sub '${AWS::StackName}-ApiCloudFrontDomainName'
+  
+  VideoBucketName:
+    Description: Name of the video bucket
+    Value: !Ref VideoBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-VideoBucketName'
+  
+  OpenSearchDomainEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchDomainEndpoint'
+
