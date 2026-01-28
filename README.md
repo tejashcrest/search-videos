@@ -69,9 +69,7 @@ After the workflow completes successfully:
    - 🎉 **Ready to Use!** section with your application link
 
 **Example Output:**
-```
 ![alt text](image.png)
-```
 
 💡 **Tip**: Save these URLs! You'll need the API URL for local frontend development.
 
