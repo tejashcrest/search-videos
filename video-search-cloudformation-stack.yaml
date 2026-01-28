@@ -18,7 +18,7 @@ Parameters:
   env:
     Type: String
     Default: 'demo'
-    AllowedValues: ['demo', 'dev', 'stage', 'prod']
+    AllowedValues: [ 'demo', 'dev', 'stage', 'prod' ]
     Description: 'Environment name for resource naming (dev, stage, demo, prod)'
   StackPrefix:
     Type: String
@@ -1175,7 +1175,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
       - Name: !Sub '${StackPrefix}-${env}-video-preprocessor'
-        Image: 'public.ecr.aws/videosearchdemo/video-preprocessing:latest'
+        Image: 'public.ecr.aws/u6a8q3n4/videosearchdemo/video-preprocessing:latest'
         Essential: true
         LogConfiguration:
           LogDriver: awslogs
@@ -1213,7 +1213,7 @@ Resources:
         OperatingSystemFamily: LINUX
       ContainerDefinitions:
       - Name: !Sub '${StackPrefix}-${env}-search-similar-videos-container'
-        Image: 'public.ecr.aws/videosearchdemo/search-similar-videos:latest'
+        Image: 'public.ecr.aws/u6a8q3n4/videosearchdemo/search-similar-videos:latest'
         Essential: true
         PortMappings:
         - ContainerPort: 8000
@@ -1292,6 +1292,7 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
     - ALBListener
+    - OpenSearchRoleMappingCustomResource
     Properties:
       ServiceName: !Sub '${StackPrefix}-${env}-service'
       Tags:
@@ -1433,8 +1434,8 @@ Resources:
       CompatibleRuntimes:
       - python3.13
       Content:
-        S3Bucket: 'video-search-demo-public-layers'
-        S3Key: 'opensearch-query-dependencies.zip'
+        S3Bucket: 'video-search-demo-public-artifacts'
+        S3Key: 'lambda-layers/opensearch-query-dependencies.zip'
 
   FfmpegVideoProcessingDependenciesLayer:
     Type: AWS::Lambda::LayerVersion
@@ -1443,13 +1444,14 @@ Resources:
       CompatibleRuntimes:
       - python3.13
       Content:
-        S3Bucket: 'video-search-demo-public-layers'
-        S3Key: 'ffmpeg-video-processing-dependencies.zip'
+        S3Bucket: 'video-search-demo-public-artifacts'
+        S3Key: 'lambda-layers/ffmpeg-video-processing-dependencies.zip'
 
   StoreEmbeddingsFunction:
     Type: AWS::Lambda::Function
     DependsOn:
     - OpenSearchDomain
+    - OpenSearchRoleMappingCustomResource
     Properties:
       FunctionName: !Sub '${StackPrefix}-${env}-store-embeddings-opensearch'
       Tags:
@@ -1478,8 +1480,8 @@ Resources:
         SecurityGroupIds:
         - !Ref LambdaSecurityGroup
       Code:
-        S3Bucket: 'video-search-demo-public-code'
-        S3Key: 'store-embeddings-lambda.zip'
+        S3Bucket: 'video-search-demo-public-artifacts'
+        S3Key: 'lambda-code/store-embeddings-lambda.zip'
       EphemeralStorage:
         Size: 2048
 
@@ -1845,6 +1847,7 @@ Resources:
     Type: AWS::Lambda::Function
     DependsOn:
     - OpenSearchDomain
+    - OpenSearchRoleMappingCustomResource
     Properties:
       FunctionName: !Sub '${StackPrefix}-${env}-create-opensearch-snapshot'
       Tags:
@@ -2115,6 +2118,22 @@ Resources:
                   import traceback
                   traceback.print_exc()
                   send_response(event, context, 'FAILED', {'Error': str(e)})
+
+  OpenSearchRoleMappingCustomResource:
+    Type: Custom::OpenSearchRoleMapping
+    DependsOn:
+    - OpenSearchDomain
+    - OpenSearchRoleMappingLambda
+    Properties:
+      ServiceToken: !GetAtt OpenSearchRoleMappingLambda.Arn
+      DomainEndpoint: !GetAtt OpenSearchDomain.DomainEndpoint
+      AdminRoleArn: !GetAtt OpenSearchAdminRole.Arn
+      RoleMappings:
+        all_access:
+        - !GetAtt OpenSearchAdminRole.Arn
+        - !GetAtt StoreEmbeddingsLambdaRole.Arn
+        - !GetAtt SearchSimilarVideosTaskRole.Arn
+        - !GetAtt CreateSnapshotLambdaRole.Arn
 
   # ============ CLOUDFRONT RESOURCES ============
   ApiDistribution:
