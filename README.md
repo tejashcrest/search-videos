@@ -32,8 +32,6 @@ In your forked repository, go to **Settings → Secrets and variables → Action
 
 💡 **SSO Users**: Get these from `aws configure export-credentials --profile your-profile` or your AWS console
 
-📖 **[Detailed SSO Setup Guide](AWS_SSO_SETUP.md)** - Complete instructions for AWS SSO users
-
 ### 3. Deploy with one click
 1. Go to the **Actions** tab in your forked repository
 2. Click **Deploy Video Search Infrastructure**
@@ -46,11 +44,10 @@ In your forked repository, go to **Settings → Secrets and variables → Action
    - **Action**: `deploy`
 5. Click **Run workflow**
 
-⏱️ **Deployment takes 15-25 minutes**. You'll get a complete working application!
+⏱️ **Deployment takes 15-25 minutes**.
 
 🌐 **Everything happens in GitHub** - no local tools or setup required!
 
-📖 **[Step-by-Step Visual Guide](GITHUB_WORKFLOW_GUIDE.md)** - Detailed screenshots and instructions
 
 📖 **[Full Deployment Guide](DEPLOYMENT_GUIDE.md)** - Detailed instructions and troubleshooting
 
@@ -119,24 +116,6 @@ The application supports multiple environments:
 - **prod**: Production
 
 Each environment is isolated with its own resources.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- 📖 [Deployment Guide](DEPLOYMENT_GUIDE.md)
-- 🐛 [Create an Issue](../../issues)
-- 💬 [Discussions](../../discussions)
 
 ## 🎯 What's Next?
 

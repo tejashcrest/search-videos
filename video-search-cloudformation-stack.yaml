@@ -18,7 +18,7 @@ Parameters:
   env:
     Type: String
     Default: 'demo'
-    AllowedValues: [ demo', 'dev', 'stage', 'prod' ]
+    AllowedValues: ['demo', 'dev', 'stage', 'prod']
     Description: 'Environment name for resource naming (dev, stage, demo, prod)'
   StackPrefix:
     Type: String
@@ -1292,7 +1292,6 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
     - ALBListener
-    - OpenSearchRoleMappingCustomResource
     Properties:
       ServiceName: !Sub '${StackPrefix}-${env}-service'
       Tags:
@@ -1451,7 +1450,6 @@ Resources:
     Type: AWS::Lambda::Function
     DependsOn:
     - OpenSearchDomain
-    - OpenSearchRoleMappingCustomResource
     Properties:
       FunctionName: !Sub '${StackPrefix}-${env}-store-embeddings-opensearch'
       Tags:

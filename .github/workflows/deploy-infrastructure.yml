@@ -180,6 +180,10 @@ jobs:
               --stack-name "${{ needs.validate-inputs.outputs.backend_stack_name }}" \
               --region "${{ env.AWS_REGION }}"
           fi
+          
+          # Cleanup: Remove uploaded template and bucket
+          aws s3 rm "s3://${TEMPLATE_BUCKET}/${TEMPLATE_KEY}"
+          aws s3 rb "s3://${TEMPLATE_BUCKET}" 2>/dev/null || true
 
       - name: Get backend outputs
         id: get-outputs
