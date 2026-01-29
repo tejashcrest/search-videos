@@ -15,6 +15,17 @@ A complete AI-powered video search application that lets you upload videos and s
 
 **Perfect for anyone who wants to try this application - no local setup required!**
 
+### Prerequisites
+
+⚠️ **Important**: Before deploying, ensure your AWS account has the required permissions.
+
+**Required AWS Permissions:**
+- Your IAM user/role must have **full access** to CloudFormation, IAM, S3, Lambda, ECS, EC2, OpenSearch, CloudFront, and other AWS services
+- **Recommended**: Use `AdministratorAccess` policy for testing
+- **For Production**: See [AWS Permissions Guide](AWS_PERMISSIONS_GUIDE.md) for detailed permission requirements
+
+📖 **[Complete AWS Permissions Guide](AWS_PERMISSIONS_GUIDE.md)** - Detailed list of all required permissions and IAM policies
+
 ### 1. Fork this repository
 Click the "Fork" button at the top of this page (GitHub web interface)
 
@@ -73,8 +84,11 @@ After the workflow completes successfully:
 
 💡 **Tip**: Save these URLs! You'll need the API URL for local frontend development.
 
+## 📖 Documentation
 
-📖 **[Full Deployment Guide](DEPLOYMENT_GUIDE.md)** - Detailed instructions and troubleshooting
+- **[AWS Permissions Guide](AWS_PERMISSIONS_GUIDE.md)** - Required AWS permissions and IAM policies
+
+- **[Full Deployment Guide](DEPLOYMENT_GUIDE.md)** - Detailed instructions and troubleshooting
 
 ## 🏗️ Architecture
 
@@ -247,13 +261,15 @@ aws opensearch list-domain-names --region "${AWS_REGION}"
 
 1. **Check the workflow logs** in GitHub Actions for error messages
 2. **Retry the cleanup workflow** - sometimes temporary AWS issues resolve on retry
-3. **Delete stacks manually** in AWS Console:
+3. **Verify permissions** - Ensure your AWS credentials have delete permissions for all resources
+4. **Delete stacks manually** in AWS Console:
    - Go to CloudFormation
    - Select the stack
    - Click "Delete"
-4. **Contact AWS Support** if resources remain stuck
+5. **Contact AWS Support** if resources remain stuck
 
 **Common Issues:**
+- **Permission denied**: Check [AWS Permissions Guide](AWS_PERMISSIONS_GUIDE.md) for required permissions
 - **OpenSearch domain deletion**: Takes 10-15 minutes, be patient
 - **VPC deletion**: Waits for all resources to be deleted first
 - **IAM roles in use**: Ensure no other services are using the roles
@@ -280,6 +296,11 @@ After deploying:
 6. **Build something amazing!**
 
 ## 📚 Quick Reference
+
+### Important Documentation
+- **[AWS Permissions Guide](AWS_PERMISSIONS_GUIDE.md)** - Complete list of required AWS permissions and IAM policies
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Detailed deployment instructions and troubleshooting
+- **[Bucket Cleanup Implementation](BUCKET_CLEANUP_IMPLEMENTATION.md)** - Technical details of automatic S3 cleanup
 
 ### Important URLs After Deployment
 - **Frontend URL**: `https://[cloudfront-id].cloudfront.net` (from deployment summary)
