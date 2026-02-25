@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import json
 import boto3
 import os
@@ -13,6 +14,13 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt  
+from pymongo import MongoClient  
+from pymongo.errors import PyMongoError  
+from passlib.context import CryptContext  
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # Configure logging
@@ -20,7 +28,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(name=__name__)
 
 
-app = FastAPI(title="Video Search Service", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None, swagger_ui_oauth2_redirect_url= None)
+_enable_docs = True # os.environ.get("ENABLE_DOCS", "true").strip().lower() in {"1", "true", "yes", "y", "on"}
+app = FastAPI(
+    title="Video Search Service",
+    version="1.0.0",
+    docs_url="/docs" if _enable_docs else None
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +42,171 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# =========================
+# Auth (JWT + DocumentDB)
+# =========================
+JWT_SECRET = (os.environ.get("JWT_SECRET") or "").strip()
+JWT_ISSUER = (os.environ.get("JWT_ISSUER") or "video-search").strip()
+JWT_AUDIENCE = (os.environ.get("JWT_AUDIENCE") or "video-search-ui").strip()
+DOCDB_AUTH_TIMEOUT_SECONDS = int(os.environ.get("DOCDB_AUTH_TIMEOUT_SECONDS", "8"))
+_DOCDB_DEFAULT_DB = "video_search"
+_DOCDB_DEFAULT_USERS_COLLECTION = "users"
+AUTH_DEV_MODE = os.environ.get("AUTH_DEV_MODE", "false").strip().lower() in {"1", "true", "yes", "y", "on"}
+AUTH_DEV_USERNAME = (os.environ.get("AUTH_DEV_USERNAME") or "").strip()
+AUTH_DEV_PASSWORD = (os.environ.get("AUTH_DEV_PASSWORD") or "").strip()
+AUTH_DEV_EMAIL = (os.environ.get("AUTH_DEV_EMAIL") or "").strip()
+_bearer = HTTPBearer(auto_error=False)
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_docdb_client: Optional[MongoClient] = None
+_docdb_client_uri: Optional[str] = None
+
+
+def get_docdb_settings() -> tuple:
+    uri = (os.environ.get("DOCDB_URI") or "").strip()
+    if not uri:
+        raise HTTPException(status_code=500, detail="DocumentDB not configured (DOCDB_URI missing)")
+    db = (os.environ.get("DOCDB_DB") or _DOCDB_DEFAULT_DB).strip() or _DOCDB_DEFAULT_DB
+    users_collection = (
+        (os.environ.get("DOCDB_USERS_COLLECTION") or _DOCDB_DEFAULT_USERS_COLLECTION).strip()
+        or _DOCDB_DEFAULT_USERS_COLLECTION
+    )
+    return uri, db, users_collection
+
+
+def get_docdb_client() -> MongoClient:
+    global _docdb_client, _docdb_client_uri
+    uri, _, _ = get_docdb_settings()
+    if _docdb_client is not None and _docdb_client_uri == uri:
+        return _docdb_client
+    _docdb_client_uri = uri
+    
+    # Use TLS certificate bundle for DocumentDB
+    # In Docker container, certificate is at /app/global-bundle.pem
+    # For local development, you can download it or use tlsInsecure=true
+    import os
+    tls_ca_file = "/app/global-bundle.pem" if os.path.exists("/app/global-bundle.pem") else None
+    
+    _docdb_client = MongoClient(
+        uri,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+        tlsCAFile=tls_ca_file,  # Use certificate if available
+    )
+    return _docdb_client
+
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    try:
+        return _pwd_context.verify(plain_password, password_hash)
+    except Exception:
+        return False
+
+
+def _require_jwt_config() -> None:
+    if not JWT_SECRET:
+        raise HTTPException(status_code=500, detail="JWT not configured (JWT_SECRET missing)")
+
+
+def _create_access_token(subject: str) -> str:
+    _require_jwt_config()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    payload = {
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "sub": subject,
+        "iat": int(now.timestamp()),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def require_auth(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> Dict[str, Any]:
+    _require_jwt_config()
+    if creds is None or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    try:
+        return jwt.decode(
+            creds.credentials,
+            JWT_SECRET,
+            algorithms=["HS256"],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+            options={"verify_exp": False},
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: Dict[str, str]
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+async def auth_login(body: LoginRequest):
+    username = str(body.username).strip()
+    if not username or not body.password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+    if AUTH_DEV_MODE:
+        if not AUTH_DEV_USERNAME or not AUTH_DEV_PASSWORD:
+            raise HTTPException(
+                status_code=500,
+                detail="Auth dev mode enabled but AUTH_DEV_USERNAME/AUTH_DEV_PASSWORD not set",
+            )
+        if username != AUTH_DEV_USERNAME or body.password != AUTH_DEV_PASSWORD:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        dev_user = {"username": AUTH_DEV_USERNAME, "email": AUTH_DEV_EMAIL or ""}
+        token = _create_access_token(subject=AUTH_DEV_USERNAME)
+        return LoginResponse(access_token=token, user=dev_user)
+
+    def _docdb_check(username_value: str, plain_password: str) -> Dict[str, str]:
+        client = get_docdb_client()
+        client.admin.command("ping")
+        _uri, db_name, users_collection_name = get_docdb_settings()
+        db = client[db_name]
+        users = db[users_collection_name]
+        doc = users.find_one({"username": username_value})
+        if not doc:
+            doc = users.find_one({"email": username_value})
+        if not doc:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        password_hash = doc.get("password_hash") or doc.get("passwordHash")
+        if not isinstance(password_hash, str) or not password_hash:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        if not verify_password(plain_password, password_hash):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        return {
+            "username": str(doc.get("username") or username_value),
+            "email": str(doc.get("email") or ""),
+        }
+
+    try:
+        user_info = await asyncio.wait_for(
+            asyncio.to_thread(_docdb_check, username, body.password),
+            timeout=DOCDB_AUTH_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Auth service timed out")
+    except HTTPException:
+        raise
+    except PyMongoError as e:
+        logger.error(f"DocumentDB auth error: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
+    except Exception as e:
+        logger.error(f"Unexpected auth error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Auth service error: {type(e).__name__}: {e}")
+    token = _create_access_token(subject=username)
+    return LoginResponse(access_token=token, user=user_info)
+
 
 # CHANGE 1: Updated index name to consolidated index
 INDEX_NAME = "video_clips_3_lucene"
@@ -138,11 +316,16 @@ TEXT_KEYWORDS = [
 
 
 # Initialize clients at startup
-opensearch_client: OpenSearch
+opensearch_client: Optional[OpenSearch] = None
 bedrock_runtime = None
 s3_client = None
 vector_pipeline_exists = False
 hybrid_pipeline_exists = False
+
+
+def ensure_search_ready() -> None:
+    if opensearch_client is None or bedrock_runtime is None or s3_client is None:
+        raise HTTPException(status_code=503, detail="Search service not initialized")
 
 
 @app.on_event("startup")
@@ -150,9 +333,15 @@ async def startup_event():
     """Initialize clients and pipelines on application startup"""
     global opensearch_client, bedrock_runtime, s3_client, vector_pipeline_exists, hybrid_pipeline_exists
 
+    strict_startup = os.environ.get("STRICT_STARTUP", "true").strip().lower() in {"1", "true", "yes", "y", "on"}
+    if not os.environ.get("OPENSEARCH_CLUSTER_HOST"):
+        logger.warning(
+            "OPENSEARCH_CLUSTER_HOST is not set; skipping search initialization. "
+            "Search/list/upload endpoints will return 503 until configured."
+        )
+        return
     try:
         logger.info("Initializing clients...")
-        # logger.info("1")
         opensearch_client = get_opensearch_client()
         bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")
         s3_client = boto3.client("s3", region_name="us-east-1")
@@ -162,21 +351,19 @@ async def startup_event():
         vector_pipeline_exists = _create_vector_search_pipeline(opensearch_client)
         _create_vector_search_pipeline_3_vector(opensearch_client)
 
-        # # Create intent-based pipelines for Marengo 3
-        # logger.info("Creating intent-based search pipelines...")
-        # _create_intent_based_pipelines(opensearch_client)
-
-        # Create combination pipelines for Marengo 3 (7 search options)
         logger.info("Creating combination search pipelines for Marengo 3...")
         _create_combination_pipelines(opensearch_client)
-
-        # logger.info("Configuring S3 CORS policy...")
-        # _configure_s3_cors(s3_client)
 
         logger.info("✓ All clients and pipelines initialized successfully")
     except Exception as e:
         logger.error(f"✗ Startup initialization failed: {e}", exc_info=True)
-        raise
+        opensearch_client = None
+        bedrock_runtime = None
+        s3_client = None
+        vector_pipeline_exists = False
+        hybrid_pipeline_exists = False
+        if strict_startup:
+            raise
 
 
 class SearchRequest(BaseModel):
@@ -184,6 +371,9 @@ class SearchRequest(BaseModel):
     image_base64: Optional[str] = None
     top_k: int = 10
     search_type: str = "hybrid"
+    categories: Optional[List[str]] = None
+    min_relevance: Optional[float] = None
+    max_segments_per_video: Optional[int] = None
 
 
 class VideoMetadata(BaseModel):
@@ -217,13 +407,14 @@ async def health_check():
 
 
 @app.post("/search", response_model=SearchResponse)
-async def search_videos(request: SearchRequest):
+async def search_videos(request: SearchRequest, _auth: Dict[str, Any] = Depends(require_auth)):
     """
     Unified search endpoint - handles both text and image searches
     - Text search: Uses query_text with specified search_type
     - Image search: Uses image_base64, generates embedding, performs image-specific search
     """
     try:
+        ensure_search_ready()
         query_text = request.query_text
         image_base64 = request.image_base64
         top_k = request.top_k
@@ -340,7 +531,7 @@ async def search_videos(request: SearchRequest):
 
 
 @app.post("/search-3", response_model=SearchResponse)
-async def search_videos_marengo3(request: SearchRequest):
+async def search_videos_marengo3(request: SearchRequest, _auth: Dict[str, Any] = Depends(require_auth)):
     """
     Marengo 3 unified search endpoint with intent classification
     - Text only: Classifies intent first, then generates embedding via Marengo 3
@@ -354,10 +545,14 @@ async def search_videos_marengo3(request: SearchRequest):
     - BALANCED: Use all three with balanced weights
     """
     try:
+        ensure_search_ready()
         query_text = request.query_text
         image_base64 = request.image_base64
         top_k = request.top_k
         search_type = request.search_type
+        categories = request.categories
+        min_relevance = request.min_relevance
+        max_segments_per_video = request.max_segments_per_video
 
         intent_pipeline_map = {
         "VISUAL": VECTOR_PIPELINE_3_VISUAL,
@@ -457,42 +652,27 @@ async def search_videos_marengo3(request: SearchRequest):
                 "⚠️ Hybrid search not yet implemented for Marengo 3, using vector search instead"
             )
             results = vector_search_marengo3(
-                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", preference = classified_intent if classified_intent else "BALANCED" 
+                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", 
+                preference = classified_intent if classified_intent else "BALANCED", 
+                categories=categories, min_relevance=min_relevance, max_segments_per_video=max_segments_per_video
             )
         elif search_type == "vector":
-            # COMMENTED OUT: Intent-based vector search temporarily disabled
-            # # For vector search, use intent classification if available (text-only queries)
-            # if classified_intent:
-            #     logger.info(
-            #         f"📊 Using intent-based vector search with intent: {classified_intent}"
-            #     )
-            #     results = vector_search_marengo3_with_intent(
-            #         opensearch_client,
-            #         query_embedding,
-            #         classified_intent,
-            #         top_k,
-            #         "video_clips_3_lucene",
-            #     )
-            # else:
-            #     # For image or multimodal queries, use balanced weights
-            #     logger.info(
-            #         "📊 Using balanced vector search (image or multimodal query)"
-            #     )
-            #     results = vector_search_marengo3(
-            #         opensearch_client, query_embedding, top_k, "video_clips_3_lucene"
-            #     )
             # Using balanced vector search (all 3 modalities)
             logger.info("📊 Using balanced vector search (all 3 modalities)")
             results = vector_search_marengo3(
-                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", preference = classified_intent if classified_intent else "BALANCED"
+                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", 
+                preference = classified_intent if classified_intent else "BALANCED", 
+                categories=categories, min_relevance=min_relevance, max_segments_per_video=max_segments_per_video
             )
         elif search_type == "visual":
             results = visual_search_marengo3(
-                opensearch_client, query_embedding, top_k, "video_clips_3_lucene"
+                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", 
+                categories=categories, min_relevance=min_relevance, max_segments_per_video=max_segments_per_video
             )
         elif search_type == "audio":
             results = audio_search_marengo3(
-                opensearch_client, query_embedding, top_k, "video_clips_3_lucene"
+                opensearch_client, query_embedding, top_k, "video_clips_3_lucene", 
+                categories=categories, min_relevance=min_relevance, max_segments_per_video=max_segments_per_video
             )
         # elif search_type == "transcription":
         #     results = transcription_search_marengo3(
@@ -518,6 +698,10 @@ async def search_videos_marengo3(request: SearchRequest):
 
         query_display = query_text if query_text else ""
         search_type_display = search_type
+
+        # Apply client-side min_relevance filter (uses normalized RRF scores from parse_search_results_vector)
+        # Note: max_segments_per_video is already handled by OpenSearch collapse (server-side)
+        results = apply_post_filters(results, min_relevance)
 
         # Convert S3 paths to presigned URLs
         results = convert_s3_to_presigned_urls(s3_client, results)
@@ -554,12 +738,13 @@ async def search_videos_marengo3(request: SearchRequest):
 
 
 @app.get("/list", response_model=VideosListResponse)
-async def list_all_videos():
+async def list_all_videos(_auth: Dict[str, Any] = Depends(require_auth)):
     """
     Get all unique videos from the OpenSearch index
     Returns video metadata including S3 paths and clip counts
     """
     try:
+        ensure_search_ready()
         # Get all unique videos from OpenSearch
         videos = get_all_unique_videos(opensearch_client)
 
@@ -589,12 +774,19 @@ async def list_all_videos():
 
 
 @app.post("/generate-upload-presigned-url")
-async def generate_upload_url(filename: str):
+async def generate_upload_url(
+    filename: str,
+    file_size: int = None,
+    category: Optional[str] = None,
+    _auth: Dict[str, Any] = Depends(require_auth),
+):
     """
-    Generate a presigned URL for direct S3 upload from frontend
-    Frontend uses this URL to upload video directly to S3 without exposing credentials
+    Generate presigned URLs for S3 upload from frontend
+    - For files < 100MB: Single PUT upload
+    - For files >= 100MB: Multipart upload with multiple presigned URLs
     """
     try:
+        ensure_search_ready()
         # Check if s3_client is initialized
         if s3_client is None:
             raise HTTPException(
@@ -610,35 +802,171 @@ async def generate_upload_url(filename: str):
             c if c.isalnum() or c in ".-_" else "_" for c in filename
         )
 
-        s3_key = f"{sanitized_name}"
+        # Sanitize category
+        category_slug = (category or "Uncategorized").replace(",", "|").replace("/", "_").strip()
+        if not category_slug:
+            category_slug = "Uncategorized"
+            
+        s3_key = f"{category_slug}/{sanitized_name}"
 
         # Get bucket name from environment
         bucket_name = os.environ.get("AWS_S3_BUCKET")
         if not bucket_name:
             raise ValueError("AWS_S3_BUCKET environment variable not set")
 
-        # Generate presigned URL for PUT operation (15 minutes expiry)
-        # Include ContentType to match the Content-Type header sent by frontend
-        presigned_url = s3_client.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": bucket_name, "Key": s3_key, "ContentType": "video/mp4"},
-            ExpiresIn=900,  # 15 minutes
-        )
+        MULTIPART_THRESHOLD = 100 * 1024 * 1024  # 100MB
+        CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for multipart
+        PRESIGNED_URL_EXPIRY = 3600  # 1 hour for presigned URLs
 
-        logger.info(f"✓ Generated presigned upload URL for: {s3_key}")
+        # CASE 1: SINGLE PUT (files < 100MB)
+        if file_size is None or file_size < MULTIPART_THRESHOLD:
+            logger.info(f"Single PUT upload for: {s3_key} (size: {file_size or 'unknown'})")
+            
+            presigned_url = s3_client.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": bucket_name, "Key": s3_key, "ContentType": "video/mp4"},
+                ExpiresIn=PRESIGNED_URL_EXPIRY,
+            )
 
-        return {
-            "presigned_url": presigned_url,
-            "s3_key": s3_key,
-            "s3_path": f"s3://{bucket_name}/{s3_key}",
-            "expires_in": 900,
-        }
+            logger.info(f"✓ Generated single presigned URL for: {s3_key}")
+            return {
+                "presigned_url": presigned_url,
+                "s3_key": s3_key,
+                "s3_path": f"s3://{bucket_name}/{s3_key}",
+                "expires_in": PRESIGNED_URL_EXPIRY,
+                "type": "single"
+            }
+
+        # CASE 2: MULTIPART UPLOAD (files >= 100MB)
+        else:
+            logger.info(f"Multipart upload for: {s3_key} (size: {file_size / (1024**2):.2f}MB)")
+            
+            # Initiate multipart upload
+            multipart_response = s3_client.create_multipart_upload(
+                Bucket=bucket_name,
+                Key=s3_key,
+                ContentType="video/mp4"
+            )
+            upload_id = multipart_response["UploadId"]
+            logger.info(f"✓ Initiated multipart upload with ID: {upload_id}")
+
+            # Calculate number of parts needed
+            num_parts = math.ceil(file_size / CHUNK_SIZE)
+            logger.info(f"Generating {num_parts} presigned URLs for {num_parts} parts")
+
+            # Generate presigned URLs for each part
+            presigned_urls = []
+            for part_num in range(1, num_parts + 1):
+                presigned_url = s3_client.generate_presigned_url(
+                    "upload_part",
+                    Params={
+                        "Bucket": bucket_name,
+                        "Key": s3_key,
+                        "UploadId": upload_id,
+                        "PartNumber": part_num
+                    },
+                    ExpiresIn=PRESIGNED_URL_EXPIRY,
+                )
+                presigned_urls.append(presigned_url)
+
+            logger.info(f"✓ Generated {len(presigned_urls)} presigned URLs for multipart upload")
+
+            return {
+                "presigned_urls": presigned_urls,
+                "uploadId": upload_id,
+                "s3_key": s3_key,
+                "s3_path": f"s3://{bucket_name}/{s3_key}",
+                "expires_in": PRESIGNED_URL_EXPIRY,
+                "type": "multipart",
+                "chunk_size": CHUNK_SIZE
+            }
 
     except ValueError as e:
         logger.error(f"Configuration error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Error generating presigned URL: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CompleteMultipartRequest(BaseModel):
+    """Request body for completing multipart upload"""
+    uploadId: str
+    s3_key: str
+    parts: List[Dict[str, str]]  # List of {"ETag": "...", "PartNumber": 1}
+
+
+@app.post("/complete-multipart-upload")
+async def complete_multipart_upload(
+    request: CompleteMultipartRequest, _auth: Dict[str, Any] = Depends(require_auth)
+):
+    """
+    Complete a multipart S3 upload after all parts have been uploaded
+    """
+    try:
+        ensure_search_ready()
+        if s3_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="S3 client not initialized. Service may still be starting up.",
+            )
+
+        upload_id = request.uploadId
+        s3_key = request.s3_key
+        parts = request.parts
+
+        if not upload_id or not s3_key or not parts:
+            raise HTTPException(
+                status_code=400,
+                detail="uploadId, s3_key, and parts are required"
+            )
+
+        bucket_name = os.environ.get("AWS_S3_BUCKET")
+        if not bucket_name:
+            raise ValueError("AWS_S3_BUCKET environment variable not set")
+
+        logger.info(f"Completing multipart upload for: {s3_key} (uploadId: {upload_id})")
+        logger.info(f"Received {len(parts)} parts to complete")
+
+        # Complete the multipart upload
+        try:
+            response = s3_client.complete_multipart_upload(
+                Bucket=bucket_name,
+                Key=s3_key,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts}
+            )
+
+            logger.info(f"✓ Multipart upload completed for: {s3_key}")
+            logger.info(f"  ETag: {response.get('ETag')}")
+            logger.info(f"  Location: {response.get('Location')}")
+
+            return {
+                "success": True,
+                "s3_path": f"s3://{bucket_name}/{s3_key}",
+                "message": f"Multipart upload completed for {s3_key}"
+            }
+
+        except s3_client.exceptions.NoSuchUpload:
+            logger.error(f"Upload ID not found: {upload_id}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Upload ID {upload_id} not found or has expired"
+            )
+        except Exception as e:
+            logger.error(f"Error completing multipart upload: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to complete multipart upload: {str(e)}"
+            )
+
+    except ValueError as e:
+        logger.error(f"Configuration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in complete-multipart-upload: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1606,6 +1934,9 @@ def vector_search_marengo3(
     top_k: int = 10,
     INDEX_NAME: str = "video_clips_3_lucene",
     preference: str = "BALANCED",
+    categories: Optional[List[str]] = None,
+    min_relevance: Optional[float] = None,
+    max_segments_per_video: Optional[int] = None,
 ) -> List[Dict]:
     
     # Map preference to pipeline and weights
@@ -1653,8 +1984,11 @@ def vector_search_marengo3(
             }
         },
         "_source": ["video_id", "video_path", "clip_id", "timestamp_start",
-                   "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration", "video_duration_sec"]
+                   "timestamp_end", "clip_text", "thumbnail_path", "video_name", "clip_duration", "video_duration_sec", "categories"]
     }
+
+    # Apply advanced filters (categories, min_relevance, max_segments_per_video)
+    search_body = _apply_advanced_filters(search_body, categories, min_relevance, max_segments_per_video)
 
 
     if vector_pipeline_exists:
@@ -1672,7 +2006,12 @@ def vector_search_marengo3(
     try:
         response = client.search(**search_params)
         logger.info(f"✓ Vector search ({preference}, Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results")
-        return parse_search_results(response)
+        
+        # If collapse was used, extract results from inner_hits
+        if max_segments_per_video is not None and max_segments_per_video > 0:
+            return parse_search_results_with_collapse(response, max_segments_per_video)
+        else:
+            return parse_search_results_vector(response)
     except Exception as e:
         logger.error(f"Vector search (Marengo 3) error: {e}", exc_info=True)
         return []
@@ -1745,6 +2084,9 @@ def visual_search_marengo3(
     query_embedding: List[float],
     top_k: int = 10,
     INDEX_NAME: str = "video_clips_3_lucene",
+    categories: Optional[List[str]] = None,
+    min_relevance: Optional[float] = None,
+    max_segments_per_video: Optional[int] = None,
 ) -> List[Dict]:
     """Visual-only k-NN search on visual embeddings (Marengo 3)"""
     search_body = {
@@ -1761,15 +2103,24 @@ def visual_search_marengo3(
             "video_name",
             "clip_duration",
             "video_duration_sec",
+            "categories",
         ],
     }
+
+    # Apply advanced filters (categories, min_relevance, max_segments_per_video)
+    search_body = _apply_advanced_filters(search_body, categories, min_relevance, max_segments_per_video)
 
     try:
         response = client.search(index=INDEX_NAME, body=search_body)
         logger.info(
             f"✓ Visual search (Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results"
         )
-        return parse_search_results(response)
+        
+        # If collapse was used, extract results from inner_hits
+        if max_segments_per_video is not None and max_segments_per_video > 0:
+            return parse_search_results_with_collapse(response, max_segments_per_video)
+        else:
+            return parse_search_results(response)
     except Exception as e:
         logger.error(f"Visual search (Marengo 3) error: {e}", exc_info=True)
         return []
@@ -1780,6 +2131,9 @@ def audio_search_marengo3(
     query_embedding: List[float],
     top_k: int = 10,
     INDEX_NAME: str = "video_clips_3_lucene",
+    categories: Optional[List[str]] = None,
+    min_relevance: Optional[float] = None,
+    max_segments_per_video: Optional[int] = None,
 ) -> List[Dict]:
     """Audio-only k-NN search on audio embeddings (Marengo 3)"""
     search_body = {
@@ -1796,15 +2150,24 @@ def audio_search_marengo3(
             "video_name",
             "clip_duration",
             "video_duration_sec",
+            "categories",
         ],
     }
+
+    # Apply advanced filters (categories, min_relevance, max_segments_per_video)
+    search_body = _apply_advanced_filters(search_body, categories, min_relevance, max_segments_per_video)
 
     try:
         response = client.search(index=INDEX_NAME, body=search_body)
         logger.info(
             f"✓ Audio search (Marengo 3) completed, found {len(response.get('hits', {}).get('hits', []))} results"
         )
-        return parse_search_results(response)
+        
+        # If collapse was used, extract results from inner_hits
+        if max_segments_per_video is not None and max_segments_per_video > 0:
+            return parse_search_results_with_collapse(response, max_segments_per_video)
+        else:
+            return parse_search_results(response)
     except Exception as e:
         logger.error(f"Audio search (Marengo 3) error: {e}", exc_info=True)
         return []
@@ -2402,6 +2765,111 @@ def parse_search_results(response: Dict) -> List[Dict]:
 #     return final_results
 
 
+def _apply_category_filter(search_body: dict, categories: Optional[List[str]]) -> dict:
+    """Wrap an existing OpenSearch query in a bool+filter to pre-filter by categories."""
+    if not categories:
+        return search_body
+    original_query = search_body["query"]
+    search_body["query"] = {
+        "bool": {
+            "must": [original_query],
+            "filter": [{"terms": {"categories": categories}}]
+        }
+    }
+    logger.info(f"📂 Applied category pre-filter: {categories}")
+    return search_body
+
+
+def _apply_advanced_filters(
+    search_body: dict,
+    categories: Optional[List[str]] = None,
+    min_relevance: Optional[float] = None,
+    max_segments_per_video: Optional[int] = None
+) -> dict:
+    """
+    Apply advanced filters to OpenSearch query for efficient server-side filtering.
+    
+    CRITICAL FIXES for OpenSearch 3.3 compatibility:
+    1. Category filter uses hybrid's native filter parameter (not bool wrapping)
+    2. min_relevance is applied CLIENT-SIDE after search (not server-side)
+    3. Collapse inner_hits uses correct array format (not object)
+    
+    Filters applied:
+    1. Category pre-filter - Uses hybrid.filter parameter (preserves normalization pipeline)
+    2. Min relevance score - APPLIED CLIENT-SIDE after search with normalized scores
+    3. Max segments per video - Uses collapse with correct inner_hits format
+    
+    Args:
+        search_body: The OpenSearch query body to modify (must contain hybrid query)
+        categories: List of category values to filter by (OR logic)
+        min_relevance: Minimum score threshold - APPLIED CLIENT-SIDE (not used here)
+        max_segments_per_video: Maximum segments to return per unique video_id
+    
+    Returns:
+        Modified search_body with filters applied
+    """
+    
+    # 1. Category filter — use hybrid's native filter param, NOT bool wrapping
+    # Wrapping hybrid in bool.must breaks the normalization pipeline
+    if categories:
+        # Check if this is a hybrid query
+        if "hybrid" in search_body.get("query", {}):
+            search_body["query"]["hybrid"]["filter"] = {
+                "terms": {"categories": categories}
+            }
+            logger.info(f"📂 Applied category pre-filter to hybrid query: {categories}")
+    
+    # 2. min_relevance — NOT applied here, handled client-side after search
+    # This ensures we work with normalized scores from RRF pipeline
+    
+    # 3. Collapse — requires OS 3.1+ (met); inner_hits requires OS 3.2+ (met)
+    # CRITICAL FIX: inner_hits must be an ARRAY, not an object
+    # CRITICAL FIX: Cannot sort by _score in inner_hits (scores are null in collapse)
+    if max_segments_per_video is not None and max_segments_per_video > 0:
+        search_body["collapse"] = {
+            "field": "video_id",
+            "inner_hits": [  # ← ARRAY, not object
+                {
+                    "name": "top_segments",
+                    "size": max_segments_per_video
+                    # No _score sort — inner_hits scores are null in collapse context
+                    # Documents are returned in index order (typically insertion order)
+                }
+            ]
+        }
+        # Increase size to get more unique videos
+        search_body["size"] = search_body.get("size", TOP_K) * 3
+        logger.info(f"📊 Applied collapse: max {max_segments_per_video} segments per video")
+    
+    return search_body
+
+
+def apply_post_filters(results: List[Dict], min_relevance: Optional[float] = None) -> List[Dict]:
+    """
+    Post-process search results with client-side min_relevance filtering.
+    
+    For vector/hybrid searches, this uses normalized RRF scores (0.0-1.0 range)
+    from parse_search_results_vector().
+    
+    Note: max_segments_per_video is handled by OpenSearch collapse (server-side),
+    so it's not needed here.
+    
+    Args:
+        results: Search results with normalized scores
+        min_relevance: Minimum normalized score threshold (0.0-1.0)
+    
+    Returns:
+        Filtered results
+    """
+    # Min relevance filter - uses normalized scores from parse_search_results_vector()
+    if min_relevance is not None:
+        before_count = len(results)
+        results = [r for r in results if r.get("score", 0) >= min_relevance]
+        logger.info(f"📊 Client-side min_relevance filter ({min_relevance}): {before_count} → {len(results)} results")
+
+    return results
+
+
 def normalize_rrf(rrf_raw, M=1.23, k=60):
     rrf_max = M * (1.0 / (k + 1.0))  # = ~0.03278688 when M=2
     return min(1.0, rrf_raw / rrf_max)
@@ -2425,6 +2893,38 @@ def parse_search_results_vector(response):
     return results
 
 
+def parse_search_results_with_collapse(response: Dict, max_segments: int) -> List[Dict]:
+    """
+    Parse OpenSearch response with collapse feature and normalize RRF scores.
+    Extracts top segments from inner_hits for each collapsed video.
+    Applies same RRF normalization as parse_search_results_vector().
+    """
+    results = []
+    
+    for hit in response["hits"]["hits"]:
+        # Get the top segment for this video (the collapsed hit)
+        raw_score = hit["_score"]
+        main_result = hit["_source"]
+        main_result["_id"] = hit["_id"]
+        main_result["score_raw"] = raw_score
+        main_result["score"] = round(normalize_rrf(raw_score), 3)  # Normalize RRF score
+        results.append(main_result)
+        
+        # Get additional segments from inner_hits if available
+        if "inner_hits" in hit and "top_segments" in hit["inner_hits"]:
+            inner_hits = hit["inner_hits"]["top_segments"]["hits"]["hits"]
+            for inner_hit in inner_hits[1:]:  # Skip first one as it's the main result
+                inner_raw_score = inner_hit["_score"]
+                inner_result = inner_hit["_source"]
+                inner_result["_id"] = inner_hit["_id"]
+                inner_result["score_raw"] = inner_raw_score
+                inner_result["score"] = round(normalize_rrf(inner_raw_score), 3)  # Normalize RRF score
+                results.append(inner_result)
+    
+    logger.info(f"📊 Extracted {len(results)} segments from collapsed results (scores normalized)")
+    return results
+
+
 # def _configure_s3_cors(s3_client):
 #     """Configure restrictive CORS policy on S3 bucket for video uploads"""
 #     bucket_name = os.environ.get('AWS_S3_BUCKET')
@@ -2437,8 +2937,8 @@ def parse_search_results_vector(response):
 #             {
 #                 'AllowedOrigins': [
 #                     'http://localhost:3000',
-#                     'http://condenast-fe.s3-website-us-east-1.amazonaws.com',
-#                     'https://condenast-fe.s3-website-us-east-1.amazonaws.com'
+#                     'http://demo-fe.s3-website-us-east-1.amazonaws.com',
+#                     'https://demo-fe.s3-website-us-east-1.amazonaws.com'
 #                 ],
 #                 'AllowedMethods': ['PUT', 'POST', 'GET', 'HEAD'],
 #                 'AllowedHeaders': ['*'],

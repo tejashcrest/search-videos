@@ -4,23 +4,30 @@ import { formatTimestamp } from '../utils/formatTime';
 import { use_thumbnail } from '../hooks/useThumbnail';
 
 const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
-  const { 
-    video_id, 
-    video_path, 
-    timestamp_start, 
-    timestamp_end, 
-    clip_text, 
-    presigned_url, 
-    thumbnail_path, 
+  const {
+    video_id,
+    video_path,
+    timestamp_start,
+    timestamp_end,
+    clip_text,
+    score,
+    presigned_url,
+    thumbnail_path,
     video_name,
-    video_duration_sec 
+    video_duration_sec
   } = clip;
+
+  // Confidence score badge
+  const rawScore = typeof score === 'number' ? score : 0;
+  const normalizedScore = rawScore > 1 ? rawScore : Math.abs(rawScore) * 100;
+  const evaluationScore = Math.min(Math.max(0, Math.min(normalizedScore, 100)), 80);
+  const confidenceDisplay = `${Math.round(evaluationScore)}% confidence`;
 
   // Use thumbnail_path if available (presigned URL from backend), otherwise generate from video
   const videoUrl = presigned_url || video_path;
   const { thumbnail, isLoading: thumbnailLoading, error: thumbnailError } = use_thumbnail(
-    videoUrl, 
-    video_id, 
+    videoUrl,
+    video_id,
     timestamp_start,
     thumbnail_path
   );
@@ -37,7 +44,7 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
       videoEl.currentTime = timestamp_start || 0;
       const playPromise = videoEl.play();
       if (playPromise?.catch) {
-        playPromise.catch(() => {});
+        playPromise.catch(() => { });
       }
     }
   }, [timestamp_start, videoUrl]);
@@ -82,7 +89,7 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
       </div>
 
       {/* Video Preview Container */}
-      <div 
+      <div
         className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden mb-3 group"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -93,7 +100,7 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
             <Loader2 size={48} className="text-gray-400 animate-spin" />
           </div>
         )}
-        
+
         {/* Error state */}
         {thumbnailError && !thumbnail && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
@@ -102,11 +109,11 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
             </div>
           </div>
         )}
-        
+
         {/* Actual thumbnail */}
         {thumbnail && (
-          <img 
-            src={thumbnail} 
+          <img
+            src={thumbnail}
             alt={`Thumbnail at ${formatTimestamp(timestamp_start)}`}
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${isHovering ? 'opacity-0' : 'opacity-100'}`}
             loading="lazy"
@@ -125,6 +132,8 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
           />
         )}
 
+
+
       </div>
 
       {/* Thumbnail strip placeholder */}
@@ -133,7 +142,11 @@ const VideoClipCardMarengo3 = ({ clip, onClick, index }) => {
       </div> */}
 
       {/* Footer Actions */}
-      <div className="flex items-center justify-end mt-4">
+      <div className="flex items-center justify-between mt-4">
+        {/* Confidence score badge */}
+        <div className="text-sm font-medium text-gray-500">
+          {confidenceDisplay}
+        </div>
         <button
           onClick={(e) => {
             e.stopPropagation();

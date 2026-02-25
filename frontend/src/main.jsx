@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
 import runtimeConfig from './config/runtimeConfig.js'
@@ -15,7 +16,9 @@ runtimeConfig.load()
     // Render React app after configuration is loaded
     ReactDOM.createRoot(document.getElementById('root')).render(
       <React.StrictMode>
-        <App />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
       </React.StrictMode>,
     );
   })
@@ -23,10 +26,11 @@ runtimeConfig.load()
     console.error('❌ Failed to load configuration:', error.message);
     console.log('⚠️ Starting app anyway - API calls will handle configuration loading');
     
-    // Still render app (will fail gracefully on API calls)
     ReactDOM.createRoot(document.getElementById('root')).render(
       <React.StrictMode>
-        <App />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
       </React.StrictMode>,
     );
   });

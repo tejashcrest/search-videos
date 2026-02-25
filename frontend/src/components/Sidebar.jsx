@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Search, UploadCloud, PanelLeft, Grid, User, Sparkles } from 'lucide-react';
+import { Search, UploadCloud, PanelLeft, Grid, User, LogOut, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Sidebar = ({ activeTab, setActiveTab }) => {
+const Sidebar = ({ activeTab, setActiveTab, userEmail = "", showLogout = false, onLogout }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const userInitial = userEmail ? String(userEmail).trim().charAt(0).toUpperCase() : "";
 
   return (
     <motion.aside
@@ -155,11 +156,14 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
 
       {/* User Profile - Bottom */}
       <div className="px-4 pt-4 border-blue-100">
-        <div className={`flex items-center gap-3 p-3 transition-all cursor-pointer ${
-          isExpanded ? 'rounded-lg hover:bg-blue-50' : 'rounded-full hover:bg-blue-50 justify-center'
-        }`}>
+        <div
+          className={`flex items-center gap-3 p-3 transition-all cursor-pointer ${
+            isExpanded ? 'rounded-lg hover:bg-blue-50' : 'rounded-full hover:bg-blue-50 justify-center'
+          }`}
+          title={userEmail || "Default user"}
+        >
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
-            <User className="w-5 h-5" />
+            {userInitial ? <span className="text-sm">{userInitial}</span> : <User className="w-5 h-5" />}
           </div>
           <AnimatePresence>
             {isExpanded && (
@@ -170,12 +174,37 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden"
               >
-                <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">Default user</p>
-                {/* <p className="text-xs text-gray-500 whitespace-nowrap">View profile</p> */}
+                <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                  {userEmail ? userEmail : "Default user"}
+                </p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
+        {showLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className={`mt-2 w-full flex items-center gap-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition-all ${
+              isExpanded ? "px-3 py-2 rounded-lg" : "p-3 rounded-full justify-center"
+            }`}
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="whitespace-nowrap overflow-hidden"
+                >
+                  Logout
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+        )}
       </div>
     </motion.aside>
   );

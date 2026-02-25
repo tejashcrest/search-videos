@@ -15,7 +15,7 @@ function SearchMarengo3() {
   const [selectedClip, setSelectedClip] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const handle_search = async (searchQuery, searchType, topK = 20, imageResponse = null, imageFile = null) => {
+  const handle_search = async (searchQuery, searchType, topK = 20, imageResponse = null, imageFile = null, categories = null, minRelevance = null, maxSegmentsPerVideo = null) => {
     setIsLoading(true);
     setError(null);
     setQuery(searchQuery || '');
@@ -27,16 +27,19 @@ function SearchMarengo3() {
         console.log("Using image search response (Marengo 3)");
         setClips(imageResponse.clips);
         setTotal(imageResponse.total);
-      } 
+      }
       // Otherwise perform unified search (text, image, or combined)
       else {
         console.log("Performing unified search (Marengo 3):", {
           hasText: !!searchQuery,
           hasImage: !!imageFile,
           topK,
-          searchType
+          searchType,
+          categories,
+          minRelevance,
+          maxSegmentsPerVideo
         });
-        const response = await searchClipsMarengo3(searchQuery, topK, searchType, imageFile);
+        const response = await searchClipsMarengo3(searchQuery, topK, searchType, imageFile, categories, minRelevance, maxSegmentsPerVideo);
         setClips(response.clips);
         setTotal(response.total);
       }
@@ -124,7 +127,7 @@ function SearchMarengo3() {
               onClick={() => {
                 handle_search('scenes with dinosaur')
               }
-            }
+              }
               className="px-4 py-2 bg-white border border-blue-200 rounded-full hover:border-blue-600 hover:bg-blue-50 transition-all text-sm text-gray-700"
             >
               scenes with dinosaur
@@ -198,10 +201,10 @@ function SearchMarengo3() {
 
       {/* Video Player Modal */}
       {selectedClip && (
-        <VideoPlayerMarengo3 
-          clip={selectedClip} 
+        <VideoPlayerMarengo3
+          clip={selectedClip}
           allClips={clips}
-          onClose={close_player} 
+          onClose={close_player}
           onClipSelect={setSelectedClip}
         />
       )}

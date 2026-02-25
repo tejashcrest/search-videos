@@ -1,15 +1,30 @@
-import React, { useState } from 'react';
-import { Upload, CheckCircle, XCircle, Loader2, Video, AlertCircle, FileVideo, UploadCloud } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, CheckCircle, AlertCircle, FileVideo, Tag, ChevronDown, ChevronUp, Square, CheckSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { upload_to_s3, validate_video_file } from '../utils/s3Upload';
-import { getPresignedUploadUrl } from '../services/api';
+import { getPresignedUploadUrl, completeMultipartUpload } from '../services/api';
+
+const CATEGORIES = ['Tutorial', 'Entertainment', 'Documentary', 'News', 'Sports', 'Music', 'Education', 'Lifestyle', 'Gaming'];
 
 const VideoUpload = () => {
   const [file, setFile] = useState(null);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, completed, error
   const [s3Url, setS3Url] = useState('');
   const [error, setError] = useState('');
+  const categoryDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target)) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
 
   const handle_file_select = (e) => {
@@ -27,26 +42,53 @@ const VideoUpload = () => {
     }
   };
 
+  const toggleCategory = (cat) => {
+    setSelectedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const selectAllCategories = () => {
+    setSelectedCategories([...CATEGORIES]);
+  };
+
+  const clearAllCategories = () => {
+    setSelectedCategories([]);
+  };
+
   const handle_upload = async () => {
-    if (!file) return;
+    if (!file || selectedCategories.length === 0) return;
 
     try {
       setUploadStatus('uploading');
       setError('');
-      
-      console.log('Requesting presigned URL for:', file.name);
-      const presignedData = await getPresignedUploadUrl(file.name);
+      setUploadProgress(0);
 
-      console.log(presignedData)
-      
-      // Upload to S3 using presigned URL
-      const s3_path = await upload_to_s3(file, presignedData, (progress) => {
+      const categoryParam = selectedCategories.join(',');
+      console.log('Requesting presigned URL for:', file.name, 'categories:', categoryParam);
+
+      // 1. Get URLs (Backend should detect large files and return multipart info)
+      const presignedData = await getPresignedUploadUrl(file.name, file.size, categoryParam);
+
+      console.log(presignedData);
+
+      // 2. Perform the upload
+      const result = await upload_to_s3(file, presignedData, (progress) => {
         console.log(`Upload progress: ${progress}%`);
-        setUploadProgress(progress)
+        setUploadProgress(progress);
       });
 
-      setS3Url(s3_path);
-      console.log('✓ Video uploaded to S3:', s3_path);
+      // 3. If Multipart, notify backend to merge parts
+      if (result.type === 'multipart') {
+        await completeMultipartUpload({
+          uploadId: result.uploadId,
+          parts: result.parts,
+          fileName: file.name
+        });
+      }
+
+      setS3Url(result.s3_path);
+      console.log('✓ Video uploaded to S3:', result.s3_path);
       setUploadStatus('completed');
 
     } catch (err) {
@@ -58,6 +100,7 @@ const VideoUpload = () => {
 
   const reset_form = () => {
     setFile(null);
+    setSelectedCategories([]);
     setUploadStatus('idle');
     setS3Url('');
     setError('');
@@ -95,13 +138,15 @@ const VideoUpload = () => {
                     {file ? file.name : 'Click to select video'}
                   </p>
                   <p className="text-base text-gray-500">
-                    Acceptable format: MP4 Only (max. 500MB)
+                    Acceptable format: MP4, MOV, WebM
+                    <br />
+                    Maximum file size: 2GB
                   </p>
                 </div>
                 <input
                   id="video-upload"
                   type="file"
-                  accept="video/mp4"
+                  accept="video/mp4,video/webm,video/quicktime"
                   onChange={handle_file_select}
                   className="hidden"
                 />
@@ -123,6 +168,70 @@ const VideoUpload = () => {
               </div>
             )}
 
+            {/* Category Dropdown */}
+            <div ref={categoryDropdownRef} className="mb-6 relative">
+              <button
+                type="button"
+                onClick={() => setCategoryDropdownOpen((o) => !o)}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 bg-gray-100 border border-gray-200 rounded-xl shadow-sm text-left transition-all hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/30 ${selectedCategories.length === 0 ? 'text-gray-500' : 'text-gray-900'
+                  } ${categoryDropdownOpen ? 'ring-2 ring-blue-400/30' : ''}`}
+              >
+                <Tag className="flex-shrink-0 text-gray-400" size={20} />
+                <span className="flex-1">
+                  {selectedCategories.length > 0
+                    ? selectedCategories.join(', ')
+                    : 'Select at least one category (required)'}
+                </span>
+                {categoryDropdownOpen ? (
+                  <ChevronUp className="flex-shrink-0 text-gray-400" size={20} />
+                ) : (
+                  <ChevronDown className="flex-shrink-0 text-gray-400" size={20} />
+                )}
+              </button>
+              {categoryDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50 max-h-64 overflow-y-auto">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
+                    <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
+                      CATEGORIES
+                    </span>
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={selectAllCategories}
+                        className="text-sm text-sky-500 hover:text-sky-600 font-medium"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearAllCategories}
+                        className="text-sm text-sky-500 hover:text-sky-600 font-medium"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="py-1">
+                    {CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => toggleCategory(cat)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 text-left"
+                      >
+                        <span className="text-gray-800">{cat}</span>
+                        {selectedCategories.includes(cat) ? (
+                          <CheckSquare className="text-sky-500" size={20} />
+                        ) : (
+                          <Square className="text-gray-300" size={20} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Error Message */}
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
@@ -137,7 +246,7 @@ const VideoUpload = () => {
             {/* Upload Button */}
             <button
               onClick={handle_upload}
-              disabled={!file}
+              disabled={!file || selectedCategories.length === 0}
               className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               <Upload size={24} />

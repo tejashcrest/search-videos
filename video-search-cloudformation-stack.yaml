@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: |
-  Condenast Video Search Infrastructure Stack
+  Demo Video Search Infrastructure Stack
 
   IMPORTANT DEPLOYMENT NOTES:
   - OpenSearch domain creation takes 15-20 minutes. Stack will wait for completion.
@@ -30,6 +30,8 @@ Parameters:
     Type: String
     Description: 'Base name for video bucket (e.g., videos)'
     Default: 'videos'
+  # DocumentDB master credentials are now stored in Secrets Manager (DocDBMasterSecret).
+  # No docdb username/password parameters required.
 
 Resources:
   ECSTaskExecutionRole:
@@ -74,6 +76,13 @@ Resources:
             Resource:
             - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${StackPrefix}-${env}-video-preprocessing:*'
             - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${StackPrefix}-${env}-search-similar-videos-task:*'
+      - PolicyName: SecretsManagerAuthSecret
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${StackPrefix}-${env}-video-search-auth*'
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -853,6 +862,79 @@ Resources:
       - Key: StackPrefix
         Value: !Ref StackPrefix
 
+  DocDBSubnetGroup:
+    Type: AWS::DocDB::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'Subnet group for ${StackPrefix}-${env} DocumentDB'
+      SubnetIds:
+      - !Ref PrivateSubnet1
+      - !Ref PrivateSubnet2
+      Tags:
+      - Key: Name
+        Value: !Sub '${StackPrefix}-${env}-docdb-subnets'
+      - Key: Environment
+        Value: !Ref env
+
+  DocDBMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${StackPrefix}-${env}-docdb-master'
+      Description: !Sub 'DocumentDB master credentials for ${StackPrefix}-${env}'
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "docdbadmin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+      Tags:
+      - Key: Name
+        Value: !Sub '${StackPrefix}-${env}-docdb-master'
+      - Key: Environment
+        Value: !Ref env
+
+  DocDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${StackPrefix}-${env}-docdb-sg'
+      GroupDescription: !Sub 'Security group for ${StackPrefix}-${env} DocumentDB'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 27017
+        ToPort: 27017
+        SourceSecurityGroupId: !Ref ECSSecurityGroup
+        Description: Allow DocumentDB from ECS tasks
+      - IpProtocol: tcp
+        FromPort: 27017
+        ToPort: 27017
+        SourceSecurityGroupId: !Ref LambdaSecurityGroup
+        Description: Allow DocumentDB from Lambda (e.g. connection verification)
+      Tags:
+      - Key: Name
+        Value: !Sub '${StackPrefix}-${env}-docdb-sg'
+      - Key: Environment
+        Value: !Ref env
+
+  DocDBCluster:
+    Type: AWS::DocDB::DBCluster
+    DependsOn: DocDBMasterSecret
+    Properties:
+      DBClusterIdentifier: !Sub '${StackPrefix}-${env}-auth-cluster'
+      MasterUsername: !Sub '{{resolve:secretsmanager:${StackPrefix}-${env}-docdb-master:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${StackPrefix}-${env}-docdb-master:SecretString:password}}'
+      DBSubnetGroupName: !Ref DocDBSubnetGroup
+      VpcSecurityGroupIds:
+      - !Ref DocDBSecurityGroup
+      StorageEncrypted: true
+      EngineVersion: '5.0.0'
+    DeletionPolicy: Snapshot
+
+  DocDBInstance:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${StackPrefix}-${env}-auth-instance'
+      DBClusterIdentifier: !Ref DocDBCluster
+      DBInstanceClass: db.t3.medium
+
   VPCEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -1192,6 +1274,7 @@ Resources:
     - ECRAPIVPCEndpoint
     - ECRDKRVPCEndpoint
     - S3VPCEndpoint
+    - DocDBAppSecretCustomResource
     Properties:
       Family: !Sub '${StackPrefix}-${env}-search-similar-videos-task'
       Tags:
@@ -1229,6 +1312,25 @@ Resources:
           Value: !Sub '${StackPrefix}-${VideoBucketBaseName}-${AWS::Region}-${AWS::AccountId}-${env}'
         - Name: PORT
           Value: '8000'
+        - Name: JWT_ISSUER
+          Value: video-search
+        - Name: JWT_AUDIENCE
+          Value: video-search-ui
+        - Name: DOCDB_DB
+          Value: video_search
+        - Name: DOCDB_USERS_COLLECTION
+          Value: users
+        - Name: DOCDB_AUTH_TIMEOUT_SECONDS
+          Value: '20'
+        Secrets:
+        - Name: DOCDB_URI
+          ValueFrom: !Sub
+            - '${SecretArn}:DOCDB_URI::'
+            - { SecretArn: !GetAtt DocDBAppSecretCustomResource.SecretArn }
+        - Name: JWT_SECRET
+          ValueFrom: !Sub
+            - '${SecretArn}:JWT_SECRET::'
+            - { SecretArn: !GetAtt DocDBAppSecretCustomResource.SecretArn }
         LogConfiguration:
           LogDriver: awslogs
           Options:
@@ -1512,9 +1614,22 @@ Resources:
           import boto3
           import os
           from datetime import datetime
+          import re
           from urllib.parse import unquote_plus
+          
           sfn_client = boto3.client('stepfunctions')
           STATE_MACHINE_ARN = os.environ['STATE_MACHINE_ARN']
+          
+          def parse_categories_from_key(key: str) -> list:
+              parts = key.split('/', 1)
+              if len(parts) == 1:
+                  return ['Uncategorized']
+              prefix = parts[0].strip()
+              if not prefix:
+                  return ['Uncategorized']
+              categories = [c.strip() for c in re.split(r'[|,]', prefix) if c.strip()]
+              return categories if categories else ['Uncategorized']
+
           def lambda_handler(event, context):
               for record in event['Records']:
                   bucket = record['s3']['bucket']['name']
@@ -1524,17 +1639,18 @@ Resources:
                   if not key.lower().endswith(('.mp4', '.mov', '.avi')):
                       print(f"Skipping non-video file: {key}")
                       continue
+                  categories = parse_categories_from_key(key)
                   sfn_input = {
                       "detail": {
                           "bucket": {"name": bucket},
-                          "object": {"key": key},
+                          "object": {"key": key, "categories": categories},
                           "dst_bucket": {"key": dst_bucket}
                       }
                   }
                   try:
                       response = sfn_client.start_execution(
                           stateMachineArn=STATE_MACHINE_ARN,
-                          name=f"video-process-{key.replace('/', '-').replace('.', '-').replace(' ', '-')[:28]}-{timestamp}",
+                          name=f"video-process-{re.sub(r'[^a-zA-Z0-9_-]', '-', key)[:28]}-{timestamp}",
                           input=json.dumps(sfn_input)
                       )
                       print(f"Started Step Functions execution: {response['executionArn']}")
@@ -1542,6 +1658,7 @@ Resources:
                       print(f"Error starting Step Functions: {str(e)}")
                       raise
               return {'statusCode': 200, 'body': json.dumps('Step Functions triggered successfully')}
+
 
   # ============ S3 BUCKET IMPORT AND EVENT NOTIFICATION ============
   VideoBucket:
@@ -1910,8 +2027,8 @@ Resources:
                   service = "es"
                   function = event.get("function", "register-snapshot-repo")
                   domain = os.getenv("OPENSEARCH_CLUSTER_HOST", "").replace("https://", "").replace("http://", "")
-                  repo_name = os.getenv("REPO_NAME", "condenast-snapshot-repo")
-                  bucket = os.getenv("S3_BUCKET", "aihouse-dist")
+                  repo_name = os.getenv("REPO_NAME", "demo-snapshot-repo")
+                  bucket = os.getenv("S3_BUCKET", "video-search-demo-public-artifacts")
                   role_arn = os.getenv("SNAPSHOT_ROLE_ARN")
                   snapshot_name = f"manual-snapshot-{int(time.time())}"
                   if not domain:
@@ -2135,6 +2252,137 @@ Resources:
         - !GetAtt SearchSimilarVideosTaskRole.Arn
         - !GetAtt CreateSnapshotLambdaRole.Arn
 
+  DocDBAppSecretLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${StackPrefix}-${env}-docdb-app-secret-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  DocDBAppSecretLambdaRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: DocDBAppSecretLambdaPolicy
+      Roles:
+      - !Ref DocDBAppSecretLambdaRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:CreateSecret
+          - secretsmanager:PutSecretValue
+          - secretsmanager:DeleteSecret
+          - secretsmanager:DescribeSecret
+          Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${StackPrefix}-${env}-video-search-auth*'
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Ref DocDBMasterSecret
+          Sid: GetDocDBMasterSecret
+
+  DocDBAppSecretLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - DocDBCluster
+    - DocDBInstance
+    - DocDBAppSecretLambdaRole
+    - DocDBAppSecretLambdaRolePolicy
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-${env}-docdb-app-secret'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Timeout: 30
+      MemorySize: 256
+      Role: !GetAtt DocDBAppSecretLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import urllib.request
+          import urllib.parse
+          import secrets
+          import boto3
+
+          def send_response(event, context, status, data=None, physical_id=None):
+              body = {
+                  'Status': status,
+                  'Reason': data.get('Error', 'OK') if status == 'FAILED' and isinstance(data, dict) else 'OK',
+                  'PhysicalResourceId': physical_id or event.get('PhysicalResourceId', 'secret'),
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {}
+              }
+              req = urllib.request.Request(event['ResponseURL'], data=json.dumps(body).encode(), method='PUT')
+              req.add_header('Content-Type', '')
+              with urllib.request.urlopen(req) as f:
+                  pass
+
+          def lambda_handler(event, context):
+              try:
+                  if event['RequestType'] in ('Delete',):
+                      send_response(event, context, 'SUCCESS', {}, event.get('PhysicalResourceId'))
+                      return
+                  props = event.get('ResourceProperties', {})
+                  endpoint = props.get('ClusterEndpoint', '')
+                  port = str(props.get('Port', '27017'))
+                  master_secret_arn = props.get('MasterSecretArn', '')
+                  if not endpoint or not master_secret_arn:
+                      raise ValueError('ClusterEndpoint and MasterSecretArn required')
+                  sm = boto3.client('secretsmanager')
+                  master = json.loads(sm.get_secret_value(SecretId=master_secret_arn)['SecretString'])
+                  username = master.get('username', '')
+                  password = master.get('password', '')
+                  if not username or not password:
+                      raise ValueError('Master secret must contain username and password')
+                  encoded_password = urllib.parse.quote(password, safe='')
+                  # Add tlsInsecure=true to skip certificate verification
+                  # This is acceptable for DocumentDB as it's within AWS VPC
+                  # For production with proper cert validation, remove tlsInsecure=true and add certificate to container
+                  docdb_uri = f"mongodb://{username}:{encoded_password}@{endpoint}:{port}/?tls=true&tlsInsecure=true&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+                  jwt_secret = secrets.token_hex(32)
+                  secret_value = json.dumps({'DOCDB_URI': docdb_uri, 'JWT_SECRET': jwt_secret})
+                  secret_name = props.get('SecretName', event['LogicalResourceId'] + '-secret')
+                  try:
+                      resp = sm.create_secret(Name=secret_name, SecretString=secret_value)
+                      secret_arn = resp['ARN']
+                  except sm.exceptions.ResourceExistsException:
+                      sm.put_secret_value(SecretId=secret_name, SecretString=secret_value)
+                      resp = sm.describe_secret(SecretId=secret_name)
+                      secret_arn = resp['ARN']
+                  send_response(event, context, 'SUCCESS', {'SecretArn': secret_arn}, secret_arn)
+              except Exception as e:
+                  print(str(e))
+                  send_response(event, context, 'FAILED', {'Error': str(e)})
+
+  DocDBAppSecretCustomResource:
+    Type: Custom::DocDBAppSecret
+    DependsOn:
+    - DocDBAppSecretLambda
+    - DocDBCluster
+    - DocDBInstance
+    - DocDBMasterSecret
+    Properties:
+      ServiceToken: !GetAtt DocDBAppSecretLambda.Arn
+      ClusterEndpoint: !GetAtt DocDBCluster.Endpoint
+      Port: '27017'
+      MasterSecretArn: !Ref DocDBMasterSecret
+      SecretName: !Sub '${StackPrefix}-${env}-video-search-auth'
+
+  DocDBAppSecretLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocDBAppSecretLambda
+      Action: lambda:InvokeFunction
+      Principal: cloudformation.amazonaws.com
+
   # ============ CLOUDFRONT RESOURCES ============
   ApiDistribution:
     Type: AWS::CloudFront::Distribution
@@ -2307,7 +2555,8 @@ Resources:
                       "originalVideo": {
                         "bucket.$": "$.bucket",
                         "key.$": "$.key"
-                      }
+                      },
+                      "categories.$": "$$.Execution.Input.detail.object.categories"
                     },
                     "End": true
                   },
@@ -2370,3 +2619,6 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-StateMachineArn'
 
+  DocumentDBClusterEndpoint:
+    Description: 'DocumentDB cluster endpoint (for manual connection / seeding users)'
+    Value: !Sub '${DocDBCluster.Endpoint}:27017'
