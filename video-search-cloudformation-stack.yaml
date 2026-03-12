@@ -2369,4 +2369,3 @@ Outputs:
     Value: !Ref VideoProcessingStateMachine
     Export:
       Name: !Sub '${AWS::StackName}-StateMachineArn'
-
