@@ -73,6 +73,7 @@ INTENT_WEIGHTS = {
     "BALANCED": [0.34, 0.33, 0.33] # balanced across all
 }
 
+
 # Combination weights for RRF pipeline (for 2-modality searches)
 COMBINATION_WEIGHTS = {
     # Visual_Audio weights: [visual, audio]
